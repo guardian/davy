@@ -1,0 +1,88 @@
+import Foundation
+
+/// Common data about the app and device, captured once when a session starts and sent as the
+/// request's `session` object.
+///
+/// Fields are deliberately coarse: they describe the kind of device and app build an event came
+/// from, not the person using it. Nothing here is persistent or unique to a device, such as a
+/// device name, advertising or vendor identifier, time zone, or screen size.
+struct Session: Codable, Sendable, Hashable {
+    /// A random identifier, generated per session and never reused.
+    let id: UUID
+    /// ``DavyConfiguration/environment``, for example `"beta"`.
+    let environment: String?
+    /// The main bundle's `CFBundleShortVersionString`, for example `"1.2.0"`.
+    let appVersion: String?
+    /// The main bundle's `CFBundleVersion`, for example `"45"`.
+    let build: String?
+    /// The operating system, for example `"iOS"` or `"macOS"`.
+    let os: String
+    /// The operating system version, for example `"26.1.0"`.
+    let osVersion: String
+    /// The hardware model identifier, for example `"iPhone17,1"` or `"Mac15,3"`, or `"Simulator"`.
+    let deviceModel: String?
+    /// The device's language and region, for example `"en_GB"`, without any custom locale settings.
+    let locale: String?
+
+    /// Captures the current app and device data for a new session.
+    static func start(environment: String?) -> Session {
+        Session(
+            id: UUID(),
+            environment: environment,
+            appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+            build: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+            os: os,
+            osVersion: osVersion,
+            deviceModel: deviceModel,
+            locale: locale
+        )
+    }
+
+    private static var os: String {
+        #if targetEnvironment(macCatalyst)
+        "macCatalyst"
+        #elseif os(macOS)
+        "macOS"
+        #elseif os(visionOS)
+        "visionOS"
+        #elseif os(tvOS)
+        "tvOS"
+        #elseif os(watchOS)
+        "watchOS"
+        #else
+        "iOS"
+        #endif
+    }
+
+    private static var osVersion: String {
+        let version = ProcessInfo.processInfo.operatingSystemVersion
+        return "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"
+    }
+
+    private static var deviceModel: String? {
+        #if targetEnvironment(simulator)
+        "Simulator"
+        #elseif os(macOS) || targetEnvironment(macCatalyst)
+        sysctlString(named: "hw.model")
+        #else
+        sysctlString(named: "hw.machine")
+        #endif
+    }
+
+    /// Language and region only, so locale customizations (calendar, numbering, and so on) aren't sent.
+    private static var locale: String? {
+        let locale = Locale.current
+        guard let language = locale.language.languageCode?.identifier else { return nil }
+        guard let region = locale.region?.identifier else { return language }
+        return "\(language)_\(region)"
+    }
+
+    private static func sysctlString(named name: String) -> String? {
+        var size = 0
+        guard sysctlbyname(name, nil, &size, nil, 0) == 0, size > 0 else { return nil }
+        var buffer = [CChar](repeating: 0, count: size)
+        guard sysctlbyname(name, &buffer, &size, nil, 0) == 0 else { return nil }
+        let bytes = buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+        return String(decoding: bytes, as: UTF8.self)
+    }
+}

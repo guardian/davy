@@ -1,0 +1,457 @@
+openapi: 3.1.0
+info:
+  title: Davy events
+  version: 1.0.0
+  summary: The requests Davy clients send to your endpoint, and the responses they act on.
+  description: |
+    The contract between Davy clients and the endpoint that receives their events. Every client
+    sends exactly these requests, so events from every platform can be queried together. The Swift
+    client for Apple platforms implements it.
+
+    An app uses one of two request formats, set by `DavyConfiguration.format`:
+
+    - **JSON batch** (the default): a `POST` to the endpoint with up to `batchSize` events from a
+      single session as a JSON body.
+    - **Query string**: one request per event with an empty body, the event's name appended to the
+      endpoint's path, and every other field as a query parameter. `POST` (the default) or `GET`.
+
+    Rules this document can't express:
+
+    - Every request includes the headers in `DavyConfiguration.headers`. Requests never send
+      cookies or use a local cache.
+    - In the query string format, parameters are sent in the order listed here, after any query
+      items already in the endpoint, and omitted when they have no value. Everything except
+      `A–Z a–z 0–9 - . _ ~` is percent-encoded, including `+`, in both the path and the query.
+      `info` is compact JSON with sorted keys and unescaped slashes.
+    - Each event, measured as the length of its query string URL, is at most `maxEventSize` bytes
+      (default 2,048), whichever format is used. A larger event is replaced with the error
+      `davy_event_too_large`.
+    - Delivery is at least once, so the same event can arrive more than once with the same ID.
+    - `timestamp` comes from the device's clock, which can be wrong. Events can arrive up to
+      `maxEventAge` (default 30 days) after they were logged.
+
+    The schemas are strict so clients can be checked against them. Servers should be lenient and
+    ignore fields they don't recognize, since a client discards the events in any request rejected
+    with 400.
+servers:
+  - url: https://api.example.com/events
+    description: An example endpoint. Replace it with the URL set as `DavyConfiguration.endpoint`.
+# Davy doesn't require authentication. Apps can add headers, such as `Authorization`, with
+# `DavyConfiguration.headers`.
+security: []
+tags:
+  - name: JSON batch
+    description: Events sent in batches as a JSON body, with `DavyConfiguration.RequestFormat.jsonBatch`.
+  - name: Query string
+    description: |
+      One event per request with every field in the URL, for servers that can log fields from the
+      URL but not from the body, with `DavyConfiguration.RequestFormat.queryString(method:maxConcurrentRequests:)`.
+paths:
+  /:
+    post:
+      tags: [JSON batch]
+      operationId: sendBatch
+      summary: Send a batch of events
+      description: |
+        Sent to the endpoint URL itself, without adding a trailing slash. Contains between 1 and
+        `batchSize` (default 100) events, oldest first, all logged in the same session. One request
+        is in flight at a time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Batch'
+            example:
+              session:
+                id: 6F9619FF-8B86-D011-B42D-00C04FC964FF
+                environment: production
+                appVersion: 1.2.0
+                build: '45'
+                os: iOS
+                osVersion: 26.1.0
+                deviceModel: iPhone17,1
+                locale: en_GB
+              events:
+                - id: 1B4E28BA-2FA1-11D2-883F-0016D3CCA427
+                  type: breadcrumb
+                  name: checkout_started
+                  timestamp: '2026-11-09T11:38:55.780Z'
+                - id: 9C5B94B1-35AD-49BB-B118-8E8FC24ABF80
+                  type: error
+                  name: payment_declined
+                  info:
+                    reason: card_expired
+                    cpu_percent: '12'
+                    memory_used_mb: '143'
+                    memory_available_mb: '2650'
+                    thermal_state: nominal
+                    low_power_mode: 'false'
+                  timestamp: '2026-11-09T11:38:57.112Z'
+      responses:
+        '2XX':
+          $ref: '#/components/responses/Stored'
+        '400':
+          $ref: '#/components/responses/Rejected'
+        '413':
+          $ref: '#/components/responses/Rejected'
+        '414':
+          $ref: '#/components/responses/Rejected'
+        '422':
+          $ref: '#/components/responses/Rejected'
+        '429':
+          $ref: '#/components/responses/Throttled'
+        '431':
+          $ref: '#/components/responses/Rejected'
+        '503':
+          $ref: '#/components/responses/Throttled'
+        default:
+          $ref: '#/components/responses/Retried'
+  /{name}:
+    parameters:
+      - $ref: '#/components/parameters/Name'
+      - $ref: '#/components/parameters/EventId'
+      - $ref: '#/components/parameters/Type'
+      - $ref: '#/components/parameters/Timestamp'
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: '#/components/parameters/Environment'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Build'
+      - $ref: '#/components/parameters/OS'
+      - $ref: '#/components/parameters/OSVersion'
+      - $ref: '#/components/parameters/DeviceModel'
+      - $ref: '#/components/parameters/Locale'
+      - $ref: '#/components/parameters/Info'
+    post:
+      tags: [Query string]
+      operationId: sendEventWithPost
+      summary: Send one event with POST
+      description: |
+        The default method for the query string format. The body is empty. Up to
+        `maxConcurrentRequests` (default 4) requests are in flight at once, so events can arrive out
+        of order; use `timestamp` to order them.
+      responses:
+        '2XX':
+          $ref: '#/components/responses/Stored'
+        '400':
+          $ref: '#/components/responses/Rejected'
+        '413':
+          $ref: '#/components/responses/Rejected'
+        '414':
+          $ref: '#/components/responses/Rejected'
+        '422':
+          $ref: '#/components/responses/Rejected'
+        '429':
+          $ref: '#/components/responses/Throttled'
+        '431':
+          $ref: '#/components/responses/Rejected'
+        '503':
+          $ref: '#/components/responses/Throttled'
+        default:
+          $ref: '#/components/responses/Retried'
+    get:
+      tags: [Query string]
+      operationId: sendEventWithGet
+      summary: Send one event with GET
+      description: |
+        Identical to the `POST` request apart from the method. Up to `maxConcurrentRequests`
+        (default 4) requests are in flight at once, so events can arrive out of order; use
+        `timestamp` to order them.
+      responses:
+        '2XX':
+          $ref: '#/components/responses/StoredNoStore'
+        '400':
+          $ref: '#/components/responses/Rejected'
+        '413':
+          $ref: '#/components/responses/Rejected'
+        '414':
+          $ref: '#/components/responses/Rejected'
+        '422':
+          $ref: '#/components/responses/Rejected'
+        '429':
+          $ref: '#/components/responses/Throttled'
+        '431':
+          $ref: '#/components/responses/Rejected'
+        '503':
+          $ref: '#/components/responses/Throttled'
+        default:
+          $ref: '#/components/responses/Retried'
+components:
+  schemas:
+    Batch:
+      type: object
+      description: The body of a JSON batch request.
+      required: [session, events]
+      additionalProperties: false
+      properties:
+        session:
+          $ref: '#/components/schemas/Session'
+        events:
+          type: array
+          description: Oldest first, all logged in `session`.
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Event'
+    Session:
+      type: object
+      description: |
+        Coarse data about the app and device, captured once when a session starts. Nothing here
+        identifies a person or a device across sessions. Events left over from a previous launch are
+        sent with the session they were logged in.
+      required: [id, os, osVersion]
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/SessionId'
+        environment:
+          $ref: '#/components/schemas/Environment'
+        appVersion:
+          $ref: '#/components/schemas/AppVersion'
+        build:
+          $ref: '#/components/schemas/Build'
+        os:
+          $ref: '#/components/schemas/OS'
+        osVersion:
+          $ref: '#/components/schemas/OSVersion'
+        deviceModel:
+          $ref: '#/components/schemas/DeviceModel'
+        locale:
+          $ref: '#/components/schemas/Locale'
+    Event:
+      type: object
+      description: A breadcrumb or error logged by the app.
+      required: [id, type, name, timestamp]
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/EventId'
+        type:
+          $ref: '#/components/schemas/EventType'
+        name:
+          $ref: '#/components/schemas/EventName'
+        info:
+          $ref: '#/components/schemas/Info'
+        timestamp:
+          $ref: '#/components/schemas/Timestamp'
+    UUID:
+      type: string
+      format: uuid
+      description: A UUID in uppercase.
+      pattern: '^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$'
+    EventId:
+      $ref: '#/components/schemas/UUID'
+      description: |
+        A random UUID generated when the event is logged and sent unchanged with every retry, so the
+        server can discard duplicates.
+      examples: [9C5B94B1-35AD-49BB-B118-8E8FC24ABF80]
+    SessionId:
+      $ref: '#/components/schemas/UUID'
+      description: |
+        A random UUID generated when the client is created, typically once per launch, and never
+        reused. Links events within a session, but not across sessions or to a device.
+      examples: [6F9619FF-8B86-D011-B42D-00C04FC964FF]
+    EventType:
+      type: string
+      description: Whether something happened (`breadcrumb`) or went wrong (`error`).
+      enum: [breadcrumb, error]
+    EventName:
+      type: string
+      minLength: 1
+      description: |
+        A short, stable name chosen by the app, for example `checkout_started`. Names should be
+        lower snake case, matching `^[a-z][a-z0-9]*(_[a-z0-9]+)*$`, but clients only check this when
+        configured to with `onInvalidEventName`, so other names can arrive.
+
+        Davy logs these names itself:
+
+        - `davy_invalid_event_name`: an error sent in place of an event with an invalid name, with
+          the name in `info` under `rejected_name`.
+        - `davy_event_too_large`: an error sent in place of an event over `maxEventSize`, with its
+          name under `rejected_name` and its size in bytes under `size`.
+        - `app_foregrounded` and `app_backgrounded`: breadcrumbs logged when
+          `logsAppLifecycleEvents` is set.
+      examples: [checkout_started, payment_declined]
+    Info:
+      type: object
+      description: |
+        Details as strings, omitted when empty. Keys are chosen by the app, apart from these:
+
+        - Diagnostics, added to every error. They vary by platform. On Apple platforms they are
+          `cpu_percent`, `memory_used_mb`, `memory_available_mb` (omitted where there's no memory
+          limit), `thermal_state` (`nominal`, `fair`, `serious`, or `critical`), and
+          `low_power_mode` (`true` or `false`).
+        - `error_type`: the type of an error logged from a platform error, but not its description.
+        - `duration_ms`: how long a measured operation took, in milliseconds.
+        - `rejected_name` and `size`: see `davy_invalid_event_name` and `davy_event_too_large`.
+      minProperties: 1
+      additionalProperties:
+        type: string
+      examples:
+        - reason: card_expired
+          cpu_percent: '12'
+          memory_used_mb: '143'
+          memory_available_mb: '2650'
+          thermal_state: nominal
+          low_power_mode: 'false'
+    Timestamp:
+      type: string
+      format: date-time
+      description: When the event was logged, by the device's clock, as ISO 8601 in UTC with milliseconds.
+      pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$'
+      examples: ['2026-11-09T11:38:57.112Z']
+    Environment:
+      type: string
+      description: |
+        `DavyConfiguration.environment`, the kind of build sending events. Omitted when not set.
+      examples: [debug, beta, production]
+    AppVersion:
+      type: string
+      description: The app's version, `CFBundleShortVersionString` on Apple platforms. Omitted when missing.
+      examples: [1.2.0]
+    Build:
+      type: string
+      description: The app's build number, `CFBundleVersion` on Apple platforms. Omitted when missing.
+      examples: ['45']
+    OS:
+      type: string
+      description: The operating system.
+      enum: [iOS, macOS, macCatalyst, visionOS, tvOS, watchOS]
+    OSVersion:
+      type: string
+      description: The operating system version, as `major.minor.patch`.
+      pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'
+      examples: [26.1.0]
+    DeviceModel:
+      type: string
+      description: The hardware model identifier, or `Simulator`. Omitted when it can't be read.
+      examples: ['iPhone17,1', 'Mac15,3', Simulator]
+    Locale:
+      type: string
+      description: |
+        The device's language and region only, for example `en_GB`, or just the language if there's
+        no region. Omitted when there's no language.
+      pattern: '^[a-z]{2,3}(_([A-Z]{2}|[0-9]{3}))?$'
+      examples: [en_GB, es_419, fr]
+  parameters:
+    Name:
+      name: name
+      in: path
+      required: true
+      description: The event's name, percent-encoded and appended to the endpoint's path.
+      schema:
+        $ref: '#/components/schemas/EventName'
+    EventId:
+      name: eventId
+      in: query
+      required: true
+      schema:
+        $ref: '#/components/schemas/EventId'
+    Type:
+      name: type
+      in: query
+      required: true
+      schema:
+        $ref: '#/components/schemas/EventType'
+    Timestamp:
+      name: timestamp
+      in: query
+      required: true
+      schema:
+        $ref: '#/components/schemas/Timestamp'
+    SessionId:
+      name: sessionId
+      in: query
+      required: true
+      schema:
+        $ref: '#/components/schemas/SessionId'
+    Environment:
+      name: environment
+      in: query
+      schema:
+        $ref: '#/components/schemas/Environment'
+    AppVersion:
+      name: appVersion
+      in: query
+      schema:
+        $ref: '#/components/schemas/AppVersion'
+    Build:
+      name: build
+      in: query
+      schema:
+        $ref: '#/components/schemas/Build'
+    OS:
+      name: os
+      in: query
+      required: true
+      schema:
+        $ref: '#/components/schemas/OS'
+    OSVersion:
+      name: osVersion
+      in: query
+      required: true
+      schema:
+        $ref: '#/components/schemas/OSVersion'
+    DeviceModel:
+      name: deviceModel
+      in: query
+      schema:
+        $ref: '#/components/schemas/DeviceModel'
+    Locale:
+      name: locale
+      in: query
+      schema:
+        $ref: '#/components/schemas/Locale'
+    Info:
+      name: info
+      in: query
+      description: The event's `info` as compact JSON with sorted keys. Omitted when empty.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Info'
+  headers:
+    RetryAfter:
+      description: |
+        How long to pause, as a number of seconds or an HTTP date. An HTTP date is measured from the
+        response's `Date` header when present. Pauses are at least 1 second and at most 24 hours,
+        lengthened by up to 10% at random.
+      schema:
+        type: string
+      examples:
+        seconds:
+          value: '120'
+        date:
+          value: Wed, 11 Nov 2026 12:00:00 GMT
+  responses:
+    Stored:
+      description: The events are stored and removed from the device. The body is ignored.
+    StoredNoStore:
+      description: |
+        The event is stored and removed from the device. The body is ignored. Include
+        `Cache-Control: no-store` so proxies don't cache the `GET` request.
+      headers:
+        Cache-Control:
+          description: '`no-store`, so proxies never answer a later request from a cache.'
+          schema:
+            type: string
+            const: no-store
+    Rejected:
+      description: |
+        The server will never accept these events, so the client discards them rather than retrying,
+        and they don't block the events behind them. Clients treat 400, 413, 414, 422, and 431 this
+        way.
+    Throttled:
+      description: |
+        The client sends nothing until the `Retry-After` delay ends, even when flushing or after a
+        relaunch, then resumes with a single request. The events are kept. Use it to slow down or
+        pause clients, for example during an incident or a cost spike. Without a valid
+        `Retry-After`, the events are retried with backoff instead.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+    Retried:
+      description: |
+        Any other response, or no response at all, for example a network error, a 5xx response, or a
+        401, 403, or 404 that likely means the endpoint is misconfigured. The events are kept, and
+        the client retries with exponential backoff and jitter, starting at up to 5 seconds and
+        doubling to at most 5 minutes, with a single request until one succeeds.
