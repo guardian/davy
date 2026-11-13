@@ -34,8 +34,11 @@ info:
     ignore fields they don't recognize, since a client discards the events in any request rejected
     with 400.
 servers:
-  - url: https://api.example.com/events
-    description: An example endpoint. Replace it with the URL set as `DavyConfiguration.endpoint`.
+  - url: https://api.example.com
+    description: |
+      An example server. The paths are for the example endpoint `https://api.example.com/events`.
+      For your own, replace this URL with your endpoint's scheme and host, and `/events` in each
+      path with your endpoint's path, as set in `DavyConfiguration.endpoint`.
 # Davy doesn't require authentication. Apps can add headers, such as `Authorization`, with
 # `DavyConfiguration.headers`.
 security: []
@@ -47,13 +50,13 @@ tags:
       One event per request with every field in the URL, for servers that can log fields from the
       URL but not from the body, with `DavyConfiguration.RequestFormat.queryString(method:maxConcurrentRequests:)`.
 paths:
-  /:
+  /events:
     post:
       tags: [JSON batch]
       operationId: sendBatch
       summary: Send a batch of events
       description: |
-        Sent to the endpoint URL itself, without adding a trailing slash. Contains between 1 and
+        Sent to the endpoint itself, without adding a trailing slash. Contains between 1 and
         `batchSize` (default 100) events, oldest first, all logged in the same session. One request
         is in flight at a time.
       requestBody:
@@ -107,7 +110,7 @@ paths:
           $ref: '#/components/responses/Throttled'
         default:
           $ref: '#/components/responses/Retried'
-  /{name}:
+  /events/{name}:
     parameters:
       - $ref: '#/components/parameters/Name'
       - $ref: '#/components/parameters/EventId'
@@ -337,7 +340,9 @@ components:
       name: name
       in: path
       required: true
-      description: The event's name, percent-encoded and appended to the endpoint's path.
+      description: |
+        The event's name, percent-encoded and appended to the endpoint's path, with a `/` between
+        them unless the endpoint already ends with one.
       schema:
         $ref: '#/components/schemas/EventName'
     EventId:

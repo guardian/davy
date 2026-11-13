@@ -395,6 +395,8 @@ Your endpoint should:
 8. **Treat the endpoint as public.** Anything built into an app, including an `Authorization` header, can be extracted from it, so validate what you receive.
 9. **Not log IP addresses**, if you want to keep reports anonymous.
 
+The requests Davy sends and the responses it acts on are defined in an OpenAPI 3.1 document, [`Spec/openapi.yaml`](Spec/openapi.yaml), and Davy's tests check every request against it. Use it to check what your endpoint receives, generate server code, or browse the formats in any OpenAPI viewer.
+
 ### Request formats
 
 Set `format` to choose how events are encoded:
@@ -519,3 +521,13 @@ swift test
 ```
 
 Or open `Package.swift` in Xcode and choose **Product > Test**.
+
+`SpecConformanceTests` checks that requests match [`Spec/openapi.yaml`](Spec/openapi.yaml) for every request format. It sends every kind of event through Davy, then checks each request against the spec's schemas and its written rules for query strings: parameter order and percent-encoding. It also checks that Davy handles every status code as the spec describes. Change the spec and the client together so both stay in step. The tests read the spec with [Yams](https://github.com/jpsim/Yams). Only the tests depend on it, so apps using Davy never fetch it.
+
+To lint the OpenAPI document after changing it (requires Node.js):
+
+```sh
+npx @redocly/cli lint Spec/openapi.yaml
+```
+
+It reports two expected warnings: there's no license, and the server is `example.com`.

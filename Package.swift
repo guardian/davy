@@ -16,6 +16,10 @@ let package = Package(
             targets: ["Davy"]
         ),
     ],
+    dependencies: [
+        // Only the tests use Yams, to read Spec/openapi.yaml, so apps using Davy never fetch it.
+        .package(url: "https://github.com/jpsim/Yams.git", from: "6.2.0"),
+    ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
@@ -27,7 +31,10 @@ let package = Package(
         ),
         .testTarget(
             name: "DavyTests",
-            dependencies: ["Davy"],
+            dependencies: [
+                "Davy",
+                .product(name: "Yams", package: "Yams"),
+            ],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
