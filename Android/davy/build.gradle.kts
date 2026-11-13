@@ -2,6 +2,9 @@ plugins {
     alias(libs.plugins.android.library)
 }
 
+// The coordinates apps use to depend on Davy, including from a composite build.
+group = "com.gu"
+
 android {
     namespace = "com.gu.davy"
     compileSdk = 37
