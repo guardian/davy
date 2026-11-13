@@ -25,27 +25,27 @@ import SwiftUI
 /// ``DavyConfiguration/debugHistoryLimit``. The view is a development tool, so its text is
 /// in English and isn't localized.
 public struct DavyDebugView: View {
-    @Environment(\.analytics) private var environmentAnalytics
+    @Environment(\.telemetry) private var environmentTelemetry
     @Environment(\.dismiss) private var dismiss
     @Environment(\.isPresented) private var isPresented
-    private let analytics: Davy?
+    private let telemetry: Davy?
 
     /// Creates a view showing the events of the ``Davy`` instance set in the environment
-    /// with `\.analytics`.
+    /// with `\.telemetry`.
     public init() {
-        analytics = nil
+        telemetry = nil
     }
 
-    /// Creates a view showing the events of `analytics`.
-    public init(analytics: Davy) {
-        self.analytics = analytics
+    /// Creates a view showing the events of `telemetry`.
+    public init(telemetry: Davy) {
+        self.telemetry = telemetry
     }
 
     public var body: some View {
         NavigationStack {
             Group {
-                if let analytics = analytics ?? environmentAnalytics {
-                    DebugEventsScreen(analytics: analytics)
+                if let telemetry = telemetry ?? environmentTelemetry {
+                    DebugEventsScreen(telemetry: telemetry)
                 } else {
                     ContentUnavailableView {
                         Label {
@@ -54,7 +54,7 @@ public struct DavyDebugView: View {
                             Image(systemName: "tray")
                         }
                     } description: {
-                        Text(verbatim: "Set one in the environment with .environment(\\.analytics, analytics), or pass one to DavyDebugView(analytics:).")
+                        Text(verbatim: "Set one in the environment with .environment(\\.telemetry, telemetry), or pass one to DavyDebugView(telemetry:).")
                     }
                 }
             }
@@ -115,8 +115,8 @@ private final class DebugEventsModel {
     private(set) var isLoaded = false
 
     /// Keeps the model up to date until the calling task is cancelled.
-    func observe(_ analytics: Davy) async {
-        for await snapshot in analytics.debugUpdates() {
+    func observe(_ telemetry: Davy) async {
+        for await snapshot in telemetry.debugUpdates() {
             events = Self.events(in: snapshot)
             pendingCount = snapshot.pending.count
             sentCount = snapshot.sent.count
@@ -144,7 +144,7 @@ private final class DebugEventsModel {
 }
 
 private struct DebugEventsScreen: View {
-    let analytics: Davy
+    let telemetry: Davy
     @State private var model = DebugEventsModel()
     @State private var selection = DebugPage.overview
 
@@ -152,9 +152,9 @@ private struct DebugEventsScreen: View {
         Group {
             switch selection {
             case .overview:
-                DebugOverview(model: model, sessionID: analytics.sessionID)
+                DebugOverview(model: model, sessionID: telemetry.sessionID)
             case .events:
-                DebugEventsList(model: model, sentHistoryLimit: analytics.configuration.debugHistoryLimit)
+                DebugEventsList(model: model, sentHistoryLimit: telemetry.configuration.debugHistoryLimit)
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -169,20 +169,20 @@ private struct DebugEventsScreen: View {
         .toolbar {
             ToolbarItemGroup(placement: .debugActions) {
                 Button(role: .destructive) {
-                    analytics.clearDebugHistory()
+                    telemetry.clearDebugHistory()
                 } label: {
                     Text(verbatim: "Clear Sent History")
                 }
                 .disabled(model.sentCount == 0)
                 Button {
-                    analytics.flush()
+                    telemetry.flush()
                 } label: {
                     Text(verbatim: "Flush Now")
                 }
             }
         }
-        .task(id: ObjectIdentifier(analytics)) {
-            await model.observe(analytics)
+        .task(id: ObjectIdentifier(telemetry)) {
+            await model.observe(telemetry)
         }
     }
 }

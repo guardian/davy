@@ -2,7 +2,7 @@ import SwiftUI
 import Davy
 
 struct ContentView: View {
-    @Environment(\.analytics) private var telemetry
+    @Environment(\.telemetry) private var telemetry
 
     var body: some View {
         NavigationStack {
@@ -30,7 +30,7 @@ struct SessionSection: View {
                     .font(.footnote.monospaced())
                     .textSelection(.enabled)
             } else {
-                Text("Analytics is disabled.")
+                Text("Telemetry is disabled.")
                     .foregroundStyle(.secondary)
             }
         } header: {
@@ -43,7 +43,7 @@ struct SessionSection: View {
 
 /// Logs breadcrumbs and errors in response to user actions.
 struct LogEventsSection: View {
-    @Environment(\.analytics) private var telemetry
+    @Environment(\.telemetry) private var telemetry
     @State private var notificationsEnabled = false
 
     var body: some View {
@@ -68,7 +68,7 @@ struct LogEventsSection: View {
 
 /// Sends pending events without waiting for a full batch or the debounce interval.
 struct FlushSection: View {
-    @Environment(\.analytics) private var telemetry
+    @Environment(\.telemetry) private var telemetry
 
     var body: some View {
         Section {

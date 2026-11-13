@@ -1,0 +1,163 @@
+package com.gu.davy
+
+import org.json.JSONException
+import org.json.JSONObject
+import java.text.ParseException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+import java.util.UUID
+
+/**
+ * The fixed JSON encoding used for requests and storage, so every client sends the same shape.
+ *
+ * Written by hand rather than with a library so the library has no dependencies, and so the output
+ * is exactly what the spec describes. Reading uses Android's built-in `org.json`.
+ */
+internal object DavyJson {
+    private const val TIMESTAMP_FORMAT = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
+
+    /** ISO 8601 in UTC with milliseconds, for example `2026-11-09T11:38:55.780Z`. */
+    fun timestamp(millis: Long): String = timestampFormat().format(Date(millis))
+
+    /** Reads a [timestamp], throwing a [ParseException] if it isn't one. */
+    fun parseTimestamp(string: String): Long = timestampFormat().parse(string)?.time ?: throw ParseException(string, 0)
+
+    // SimpleDateFormat isn't thread-safe, and java.time needs API 26, so make one each time.
+    private fun timestampFormat() = SimpleDateFormat(TIMESTAMP_FORMAT, Locale.US).apply {
+        timeZone = TimeZone.getTimeZone("UTC")
+        isLenient = false
+    }
+
+    /** UUIDs in uppercase, as Apple platforms write them. */
+    fun uuid(id: UUID): String = id.toString().uppercase(Locale.ROOT)
+
+    /** The JSON batch request body: `{ "session": { … }, "events": [ … ] }`. */
+    fun payload(session: Session, events: List<EventRecord>): String = buildString {
+        append("{\"session\":")
+        appendSession(session)
+        append(",\"events\":[")
+        events.forEachIndexed { index, event ->
+            if (index > 0) append(',')
+            appendEvent(event)
+        }
+        append("]}")
+    }
+
+    /**
+     * An event as stored on disk, with the session it was logged in, so events left over from a
+     * previous launch are still sent with their original session: `{ "session": { … }, "event": { … } }`.
+     */
+    fun pendingEvent(session: Session, event: EventRecord): String = buildString {
+        append("{\"session\":")
+        appendSession(session)
+        append(",\"event\":")
+        appendEvent(event)
+        append('}')
+    }
+
+    /** Reads a [pendingEvent], or returns `null` if [json] isn't one. */
+    fun parsePendingEvent(json: String): Pair<Session, EventRecord>? = try {
+        val pending = JSONObject(json)
+        parseSession(pending.getJSONObject("session")) to parseEvent(pending.getJSONObject("event"))
+    } catch (_: JSONException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
+    } catch (_: ParseException) {
+        null
+    }
+
+    /** Reads a session in the form [payload] writes it. */
+    fun parseSession(json: JSONObject): Session = Session(
+        id = UUID.fromString(json.getString("id")),
+        environment = json.stringOrNull("environment"),
+        appVersion = json.stringOrNull("appVersion"),
+        build = json.stringOrNull("build"),
+        os = json.getString("os"),
+        osVersion = json.getString("osVersion"),
+        deviceModel = json.stringOrNull("deviceModel"),
+        locale = json.stringOrNull("locale"),
+    )
+
+    /** Reads an event in the form [payload] writes it. */
+    fun parseEvent(json: JSONObject): EventRecord = EventRecord(
+        id = UUID.fromString(json.getString("id")),
+        type = json.getString("type").let { type ->
+            EventRecord.Type.entries.firstOrNull { it.wireName == type } ?: throw IllegalArgumentException("Unknown event type $type")
+        },
+        name = json.getString("name"),
+        info = json.optJSONObject("info")?.let { info -> info.keys().asSequence().associateWith(info::getString) },
+        timestampMillis = parseTimestamp(json.getString("timestamp")),
+    )
+
+    private fun JSONObject.stringOrNull(key: String): String? = if (isNull(key)) null else getString(key)
+
+    /** `info` as compact JSON with sorted keys, as sent in the query string format. */
+    fun info(info: Map<String, String>): String = buildString { appendObject(info.toSortedMap()) }
+
+    private fun StringBuilder.appendSession(session: Session) {
+        appendObject(
+            linkedMapOf(
+                "id" to uuid(session.id),
+                "environment" to session.environment,
+                "appVersion" to session.appVersion,
+                "build" to session.build,
+                "os" to session.os,
+                "osVersion" to session.osVersion,
+                "deviceModel" to session.deviceModel,
+                "locale" to session.locale,
+            ),
+        )
+    }
+
+    private fun StringBuilder.appendEvent(event: EventRecord) {
+        append("{\"id\":")
+        appendString(uuid(event.id))
+        append(",\"type\":")
+        appendString(event.type.wireName)
+        append(",\"name\":")
+        appendString(event.name)
+        event.info?.let {
+            append(",\"info\":")
+            appendObject(it.toSortedMap())
+        }
+        append(",\"timestamp\":")
+        appendString(timestamp(event.timestampMillis))
+        append('}')
+    }
+
+    /** An object of strings, omitting `null` values. */
+    private fun StringBuilder.appendObject(fields: Map<String, String?>) {
+        append('{')
+        var first = true
+        for ((key, value) in fields) {
+            if (value == null) continue
+            if (!first) append(',')
+            first = false
+            appendString(key)
+            append(':')
+            appendString(value)
+        }
+        append('}')
+    }
+
+    private fun StringBuilder.appendString(value: String) {
+        append('"')
+        for (char in value) {
+            when (char) {
+                '"' -> append("\\\"")
+                '\\' -> append("\\\\")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                '\b' -> append("\\b")
+                '\u000C' -> append("\\f")
+                in '\u0000'..'\u001F' -> append(String.format(Locale.ROOT, "\\u%04x", char.code))
+                else -> append(char)
+            }
+        }
+        append('"')
+    }
+}

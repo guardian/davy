@@ -6,7 +6,8 @@ info:
   description: |
     The contract between Davy clients and the endpoint that receives their events. Every client
     sends exactly these requests, so events from every platform can be queried together. The Swift
-    client for Apple platforms implements it.
+    client for Apple platforms and the Kotlin client for Android implement it, and their tests check
+    their requests against it and against the shared examples in `fixtures.json`.
 
     An app uses one of two request formats, set by `DavyConfiguration.format`:
 
@@ -282,8 +283,13 @@ components:
         - Diagnostics, added to every error. They vary by platform. On Apple platforms they are
           `cpu_percent`, `memory_used_mb`, `memory_available_mb` (omitted where there's no memory
           limit), `thermal_state` (`nominal`, `fair`, `serious`, or `critical`), and
-          `low_power_mode` (`true` or `false`).
-        - `error_type`: the type of an error logged from a platform error, but not its description.
+          `low_power_mode` (`true` or `false`). On Android they are `cpu_percent` (averaged since
+          the previous error or launch), `memory_used_mb` (Java and native heap),
+          `memory_available_mb` (Java heap left), `thermal_state` (`none`, `light`, `moderate`,
+          `severe`, `critical`, `emergency`, or `shutdown`, on Android 10 and later), and
+          `low_power_mode` (whether Battery Saver is on).
+        - `error_type`: the type of an error logged from a platform error, such as a Swift `Error`
+          or a Kotlin `Throwable`, but not its description.
         - `duration_ms`: how long a measured operation took, in milliseconds.
         - `rejected_name` and `size`: see `davy_invalid_event_name` and `davy_event_too_large`.
       minProperties: 1
@@ -309,25 +315,33 @@ components:
       examples: [debug, beta, production]
     AppVersion:
       type: string
-      description: The app's version, `CFBundleShortVersionString` on Apple platforms. Omitted when missing.
+      description: |
+        The app's version: `CFBundleShortVersionString` on Apple platforms, or `versionName` on
+        Android. Omitted when missing.
       examples: [1.2.0]
     Build:
       type: string
-      description: The app's build number, `CFBundleVersion` on Apple platforms. Omitted when missing.
+      description: |
+        The app's build number: `CFBundleVersion` on Apple platforms, or `versionCode` on Android.
+        Omitted when missing.
       examples: ['45']
     OS:
       type: string
       description: The operating system.
-      enum: [iOS, macOS, macCatalyst, visionOS, tvOS, watchOS]
+      enum: [iOS, macOS, macCatalyst, visionOS, tvOS, watchOS, Android]
     OSVersion:
       type: string
-      description: The operating system version, as `major.minor.patch`.
+      description: |
+        The operating system version, as `major.minor.patch`, padded with zeros where the system
+        reports fewer parts, so Android 15 is `15.0.0`.
       pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'
       examples: [26.1.0]
     DeviceModel:
       type: string
-      description: The hardware model identifier, or `Simulator`. Omitted when it can't be read.
-      examples: ['iPhone17,1', 'Mac15,3', Simulator]
+      description: |
+        The device's model: the hardware model identifier on Apple platforms, or `Simulator`, and the
+        model name on Android. Omitted when it can't be read.
+      examples: ['iPhone17,1', 'Mac15,3', Simulator, Pixel 9]
     Locale:
       type: string
       description: |

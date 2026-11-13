@@ -1,0 +1,114 @@
+{
+  "description": "Requests every Davy client must build exactly. For each case, build a request for the session and events with the endpoint, format, and headers, then compare it with expected: the method and URL must match exactly, header names ignoring case, and the body as parsed JSON. Session and events are given in their JSON batch form.",
+  "cases": [
+    {
+      "name": "JSON batch with every session field and two events",
+      "endpoint": "https://api.example.com/events",
+      "format": { "type": "jsonBatch" },
+      "headers": { "Authorization": "Bearer abc123" },
+      "session": {
+        "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
+        "environment": "production",
+        "appVersion": "1.2.0",
+        "build": "45",
+        "os": "iOS",
+        "osVersion": "26.1.0",
+        "deviceModel": "iPhone17,1",
+        "locale": "en_GB"
+      },
+      "events": [
+        { "id": "1B4E28BA-2FA1-11D2-883F-0016D3CCA427", "type": "breadcrumb", "name": "checkout_started", "timestamp": "2026-11-09T11:38:55.780Z" },
+        { "id": "9C5B94B1-35AD-49BB-B118-8E8FC24ABF80", "type": "error", "name": "payment_declined", "info": { "reason": "card_expired", "cpu_percent": "12" }, "timestamp": "2026-11-09T11:38:57.112Z" }
+      ],
+      "expected": {
+        "method": "POST",
+        "url": "https://api.example.com/events",
+        "headers": {
+          "Authorization": "Bearer abc123",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "events": [
+            {
+              "id": "1B4E28BA-2FA1-11D2-883F-0016D3CCA427",
+              "name": "checkout_started",
+              "timestamp": "2026-11-09T11:38:55.780Z",
+              "type": "breadcrumb"
+            },
+            {
+              "id": "9C5B94B1-35AD-49BB-B118-8E8FC24ABF80",
+              "info": {
+                "cpu_percent": "12",
+                "reason": "card_expired"
+              },
+              "name": "payment_declined",
+              "timestamp": "2026-11-09T11:38:57.112Z",
+              "type": "error"
+            }
+          ],
+          "session": {
+            "appVersion": "1.2.0",
+            "build": "45",
+            "deviceModel": "iPhone17,1",
+            "environment": "production",
+            "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
+            "locale": "en_GB",
+            "os": "iOS",
+            "osVersion": "26.1.0"
+          }
+        }
+      }
+    },
+    {
+      "name": "Query string POST with every session field, an endpoint with a query, and info that needs encoding",
+      "endpoint": "https://api.example.com/v1/events?key=abc",
+      "format": { "type": "queryString", "method": "POST" },
+      "headers": { "Authorization": "Bearer abc123" },
+      "session": {
+        "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
+        "environment": "beta",
+        "appVersion": "1.2.0 (beta)",
+        "build": "45",
+        "os": "Android",
+        "osVersion": "15.0.0",
+        "deviceModel": "Pixel 9",
+        "locale": "es_419"
+      },
+      "events": [
+        {
+          "id": "9C5B94B1-35AD-49BB-B118-8E8FC24ABF80",
+          "type": "error",
+          "name": "payment_declined",
+          "info": { "reason": "card_expired", "note": "café ☕️ & more", "path": "a/b+c=d?e#f%", "quote": "say \"hi\" \\ bye", "emoji": "👩‍👩‍👧" },
+          "timestamp": "2026-11-09T11:38:57.112Z"
+        }
+      ],
+      "expected": {
+        "method": "POST",
+        "url": "https://api.example.com/v1/events/payment_declined?key=abc&eventId=9C5B94B1-35AD-49BB-B118-8E8FC24ABF80&type=error&timestamp=2026-11-09T11%3A38%3A57.112Z&sessionId=6F9619FF-8B86-D011-B42D-00C04FC964FF&environment=beta&appVersion=1.2.0%20%28beta%29&build=45&os=Android&osVersion=15.0.0&deviceModel=Pixel%209&locale=es_419&info=%7B%22emoji%22%3A%22%F0%9F%91%A9%E2%80%8D%F0%9F%91%A9%E2%80%8D%F0%9F%91%A7%22%2C%22note%22%3A%22caf%C3%A9%20%E2%98%95%EF%B8%8F%20%26%20more%22%2C%22path%22%3A%22a%2Fb%2Bc%3Dd%3Fe%23f%25%22%2C%22quote%22%3A%22say%20%5C%22hi%5C%22%20%5C%5C%20bye%22%2C%22reason%22%3A%22card_expired%22%7D",
+        "headers": {
+          "Authorization": "Bearer abc123"
+        }
+      }
+    },
+    {
+      "name": "Query string GET with only required session fields, an endpoint ending in a slash, a name that needs encoding, and a whole second",
+      "endpoint": "https://api.example.com/events/",
+      "format": { "type": "queryString", "method": "GET" },
+      "headers": {},
+      "session": {
+        "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
+        "os": "iOS",
+        "osVersion": "26.1.0"
+      },
+      "events": [
+        { "id": "1B4E28BA-2FA1-11D2-883F-0016D3CCA427", "type": "breadcrumb", "name": "Checkout Started/Now", "timestamp": "2023-11-14T22:13:20.000Z" }
+      ],
+      "expected": {
+        "method": "GET",
+        "url": "https://api.example.com/events/Checkout%20Started%2FNow?eventId=1B4E28BA-2FA1-11D2-883F-0016D3CCA427&type=breadcrumb&timestamp=2023-11-14T22%3A13%3A20.000Z&sessionId=6F9619FF-8B86-D011-B42D-00C04FC964FF&os=iOS&osVersion=26.1.0",
+        "headers": {}
+      }
+    }
+  ]
+}

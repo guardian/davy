@@ -146,12 +146,12 @@ struct DavyTests {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
-        let analytics = makeDavy(directory: directory, transport: transport, environment: "beta")
+        let telemetry = makeDavy(directory: directory, transport: transport, environment: "beta")
 
-        analytics.log(.breadcrumb("checkout_started"))
-        analytics.log(.error("payment_declined", info: ["reason": "card_expired"]))
-        analytics.log(.breadcrumb("checkout_cancelled"))
-        await analytics.flushAndWait()
+        telemetry.log(.breadcrumb("checkout_started"))
+        telemetry.log(.error("payment_declined", info: ["reason": "card_expired"]))
+        telemetry.log(.breadcrumb("checkout_cancelled"))
+        await telemetry.flushAndWait()
 
         let payloads = await transport.payloads
         #expect(payloads.count == 1)
@@ -167,7 +167,7 @@ struct DavyTests {
 
         let expected = Session.start(environment: "beta")
         let session = payload.session
-        #expect(session.id == analytics.sessionID)
+        #expect(session.id == telemetry.sessionID)
         #expect(session.environment == "beta")
         #expect(session.appVersion == expected.appVersion)
         #expect(session.build == expected.build)
@@ -182,14 +182,14 @@ struct DavyTests {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
-        let analytics = makeDavy(directory: directory, transport: transport, onInvalidEventName: .sendError)
+        let telemetry = makeDavy(directory: directory, transport: transport, onInvalidEventName: .sendError)
 
-        analytics.log(.breadcrumb("checkout_started"))
+        telemetry.log(.breadcrumb("checkout_started"))
         // Diagnostics replace any values already in `info` under the same keys.
-        analytics.log(.error("payment_declined", info: ["reason": "card_expired", "low_power_mode": "unknown"]))
+        telemetry.log(.error("payment_declined", info: ["reason": "card_expired", "low_power_mode": "unknown"]))
         // Errors that replace an invalid name are captured when logged too.
-        analytics.log(.breadcrumb("checkoutStarted"))
-        await analytics.flushAndWait()
+        telemetry.log(.breadcrumb("checkoutStarted"))
+        await telemetry.flushAndWait()
 
         let events = await transport.sentEvents
         #expect(events.map(\.name) == ["checkout_started", "payment_declined", "davy_invalid_event_name"])
@@ -214,11 +214,11 @@ struct DavyTests {
         await failingTransport.setFailing(true)
         var firstSessionID: UUID?
         do {
-            let analytics = makeDavy(directory: directory, transport: failingTransport)
-            firstSessionID = analytics.sessionID
-            analytics.log(.breadcrumb("event-0"))
-            analytics.log(.error("event-1"))
-            await analytics.flushAndWait()
+            let telemetry = makeDavy(directory: directory, transport: failingTransport)
+            firstSessionID = telemetry.sessionID
+            telemetry.log(.breadcrumb("event-0"))
+            telemetry.log(.error("event-1"))
+            await telemetry.flushAndWait()
         }
         #expect(await failingTransport.attempts == 1)
 
@@ -238,10 +238,10 @@ struct DavyTests {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
-        let analytics = makeDavy(directory: directory, transport: transport, batchSize: 3)
+        let telemetry = makeDavy(directory: directory, transport: transport, batchSize: 3)
 
         for index in 0..<3 {
-            analytics.log(.breadcrumb("event-\(index)"))
+            telemetry.log(.breadcrumb("event-\(index)"))
         }
 
         #expect(await waitUntil { await transport.sentEvents.count == 3 })
@@ -252,10 +252,10 @@ struct DavyTests {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
-        let analytics = makeDavy(directory: directory, transport: transport, debounceInterval: .milliseconds(100))
+        let telemetry = makeDavy(directory: directory, transport: transport, debounceInterval: .milliseconds(100))
 
-        analytics.log(.breadcrumb("event-0"))
-        analytics.log(.breadcrumb("event-1"))
+        telemetry.log(.breadcrumb("event-0"))
+        telemetry.log(.breadcrumb("event-1"))
 
         #expect(await waitUntil { await transport.sentEvents.count == 2 })
         #expect(await transport.payloads.count == 1)
@@ -269,7 +269,7 @@ struct DavyTests {
         let center = NotificationCenter()
         let foreground = try #require(AppLifecycle.foregroundNotification)
         let background = try #require(AppLifecycle.backgroundNotification)
-        let analytics = makeDavy(
+        let telemetry = makeDavy(
             directory: directory,
             transport: transport,
             logsAppLifecycleEvents: logsAppLifecycleEvents,
@@ -278,13 +278,13 @@ struct DavyTests {
 
         // Like launching, entering the foreground before ever leaving it isn't logged.
         center.post(name: foreground, object: nil)
-        analytics.log(.breadcrumb("checkout_started"))
+        telemetry.log(.breadcrumb("checkout_started"))
         center.post(name: background, object: nil)
         // The debounce interval is long, so only backgrounding sends these.
         let firstFlush = ["checkout_started"] + (logsAppLifecycleEvents ? ["app_backgrounded"] : [])
         #expect(await waitUntil { await transport.sentNames == firstFlush })
 
-        analytics.log(.breadcrumb("checkout_finished"))
+        telemetry.log(.breadcrumb("checkout_finished"))
         center.post(name: foreground, object: nil)
         center.post(name: background, object: nil)
         let secondFlush = ["checkout_finished"] + (logsAppLifecycleEvents ? ["app_foregrounded", "app_backgrounded"] : [])
@@ -296,16 +296,16 @@ struct DavyTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
         await transport.setFailing(true)
-        let analytics = makeDavy(directory: directory, transport: transport, batchSize: 2)
+        let telemetry = makeDavy(directory: directory, transport: transport, batchSize: 2)
 
         for index in 0..<5 {
-            analytics.log(.breadcrumb("event-\(index)"))
+            telemetry.log(.breadcrumb("event-\(index)"))
         }
-        await analytics.flushAndWait()
+        await telemetry.flushAndWait()
         #expect(await transport.payloads.isEmpty)
 
         await transport.setFailing(false)
-        await analytics.flushAndWait()
+        await telemetry.flushAndWait()
 
         let payloads = await transport.payloads
         #expect(payloads.map(\.events.count) == [2, 2, 1])
@@ -325,8 +325,8 @@ struct DavyTests {
         }
 
         let transport = MockTransport()
-        let analytics = makeDavy(directory: directory, transport: transport)
-        await analytics.flushAndWait()
+        let telemetry = makeDavy(directory: directory, transport: transport)
+        await telemetry.flushAndWait()
 
         #expect(await transport.sentNames == ["recent"])
         #expect(FileEventStore(directory: eventsDirectory).count == 0)
@@ -340,9 +340,9 @@ struct DavyTests {
         try store.append(Data(#"{"not":"an event"}"#.utf8), loggedAt: .now.addingTimeInterval(-60))
 
         let transport = MockTransport()
-        let analytics = makeDavy(directory: directory, transport: transport)
-        analytics.log(.breadcrumb("event-0"))
-        await analytics.flushAndWait()
+        let telemetry = makeDavy(directory: directory, transport: transport)
+        telemetry.log(.breadcrumb("event-0"))
+        await telemetry.flushAndWait()
 
         #expect(await transport.sentNames == ["event-0"])
         #expect(FileEventStore(directory: eventsDirectory).count == 0)
@@ -352,12 +352,12 @@ struct DavyTests {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
-        let analytics = makeDavy(directory: directory, transport: transport)
+        let telemetry = makeDavy(directory: directory, transport: transport)
 
         DispatchQueue.concurrentPerform(iterations: 250) { index in
-            analytics.log(.breadcrumb("event-\(index)"))
+            telemetry.log(.breadcrumb("event-\(index)"))
         }
-        await analytics.flushAndWait()
+        await telemetry.flushAndWait()
 
         let names = await transport.sentNames
         #expect(names.count == 250)
@@ -389,12 +389,12 @@ struct DavyTests {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
-        let analytics = makeDavy(directory: directory, transport: transport, onInvalidEventName: action)
+        let telemetry = makeDavy(directory: directory, transport: transport, onInvalidEventName: action)
 
-        analytics.log(.breadcrumb("checkout_started"))
-        analytics.log(.breadcrumb("checkoutStarted"))
-        analytics.log(.error("payment-declined"))
-        await analytics.flushAndWait()
+        telemetry.log(.breadcrumb("checkout_started"))
+        telemetry.log(.breadcrumb("checkoutStarted"))
+        telemetry.log(.error("payment-declined"))
+        await telemetry.flushAndWait()
 
         #expect(await transport.sentNames == expectedNames)
     }
@@ -403,11 +403,11 @@ struct DavyTests {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
-        let analytics = makeDavy(directory: directory, transport: transport, onInvalidEventName: .sendError)
+        let telemetry = makeDavy(directory: directory, transport: transport, onInvalidEventName: .sendError)
 
-        analytics.log(.breadcrumb("checkout_started", info: ["step": "cart"]))
-        analytics.log(.breadcrumb("checkoutStarted", info: ["step": "cart"]))
-        await analytics.flushAndWait()
+        telemetry.log(.breadcrumb("checkout_started", info: ["step": "cart"]))
+        telemetry.log(.breadcrumb("checkoutStarted", info: ["step": "cart"]))
+        await telemetry.flushAndWait()
 
         let events = await transport.sentEvents
         #expect(events.map(\.type) == ["breadcrumb", "error"])
@@ -424,14 +424,14 @@ struct DavyTests {
         // IDs and timestamps have a fixed length, so any record of `fitting` has this size.
         let builder = RequestBuilder(configuration: DavyConfiguration(endpoint: URL(string: "https://example.com/events")!))
         let size = try builder.size(of: EventRecord(fitting, timestamp: .now), in: Session.start(environment: nil))
-        let analytics = makeDavy(directory: directory, transport: transport, maxEventSize: size)
+        let telemetry = makeDavy(directory: directory, transport: transport, maxEventSize: size)
 
-        analytics.log(fitting)
-        analytics.log(tooLarge)
-        analytics.log(.error("payment_declined", info: tooLarge.info))
+        telemetry.log(fitting)
+        telemetry.log(tooLarge)
+        telemetry.log(.error("payment_declined", info: tooLarge.info))
         // Even the replacement error is too large, so nothing is sent.
-        analytics.log(.breadcrumb(String(repeating: "a", count: size)))
-        await analytics.flushAndWait()
+        telemetry.log(.breadcrumb(String(repeating: "a", count: size)))
+        await telemetry.flushAndWait()
 
         let events = await transport.sentEvents
         #expect(events.map(\.type) == ["breadcrumb", "error", "error"])
@@ -450,7 +450,7 @@ struct DavyTests {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
-        let analytics = makeDavy(
+        let telemetry = makeDavy(
             directory: directory,
             transport: transport,
             endpoint: "https://example.com/events?key=abc",
@@ -459,9 +459,9 @@ struct DavyTests {
             headers: ["Authorization": "Bearer token"]
         )
 
-        analytics.log(.breadcrumb("checkout_started"))
-        analytics.log(.error("payment_declined", info: ["reason": "a&b=c+d /é"]))
-        await analytics.flushAndWait()
+        telemetry.log(.breadcrumb("checkout_started"))
+        telemetry.log(.error("payment_declined", info: ["reason": "a&b=c+d /é"]))
+        await telemetry.flushAndWait()
 
         // Requests are sent concurrently, so they may arrive in either order.
         let requests = await transport.requests.sorted { $0.url?.path() ?? "" < $1.url?.path() ?? "" }
@@ -478,7 +478,7 @@ struct DavyTests {
             let query = try queryParameters(of: request)
             eventIDs.insert(try #require(query["eventId"].flatMap(UUID.init(uuidString:))).uuidString)
             #expect(query["key"] == "abc")
-            #expect(query["sessionId"] == analytics.sessionID.uuidString)
+            #expect(query["sessionId"] == telemetry.sessionID.uuidString)
             #expect(query["environment"] == "beta")
             #expect(query["appVersion"] == expected.appVersion)
             #expect(query["build"] == expected.build)
@@ -506,12 +506,12 @@ struct DavyTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
         await transport.setFailing(true)
-        let analytics = makeDavy(directory: directory, transport: transport, format: .queryString())
+        let telemetry = makeDavy(directory: directory, transport: transport, format: .queryString())
 
-        analytics.log(.breadcrumb("event_0"))
-        await analytics.flushAndWait()
+        telemetry.log(.breadcrumb("event_0"))
+        await telemetry.flushAndWait()
         await transport.setFailing(false)
-        await analytics.flushAndWait()
+        await telemetry.flushAndWait()
 
         let eventIDs = try await transport.requests.map { try queryParameters(of: $0)["eventId"] }
         #expect(eventIDs.count == 2)
@@ -525,13 +525,13 @@ struct DavyTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
         await transport.respond(with: statusCode)
-        let analytics = makeDavy(directory: directory, transport: transport)
+        let telemetry = makeDavy(directory: directory, transport: transport)
 
-        analytics.log(.breadcrumb("rejected"))
-        await analytics.flushAndWait()
+        telemetry.log(.breadcrumb("rejected"))
+        await telemetry.flushAndWait()
         await transport.respond(with: 200)
-        analytics.log(.breadcrumb("accepted"))
-        await analytics.flushAndWait()
+        telemetry.log(.breadcrumb("accepted"))
+        await telemetry.flushAndWait()
 
         #expect(await transport.attempts == 2)
         #expect(await transport.sentNames == ["accepted"])
@@ -543,12 +543,12 @@ struct DavyTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
         await transport.respond(with: statusCode)
-        let analytics = makeDavy(directory: directory, transport: transport)
+        let telemetry = makeDavy(directory: directory, transport: transport)
 
-        analytics.log(.breadcrumb("event_0"))
-        await analytics.flushAndWait()
+        telemetry.log(.breadcrumb("event_0"))
+        await telemetry.flushAndWait()
         await transport.respond(with: 200)
-        await analytics.flushAndWait()
+        await telemetry.flushAndWait()
 
         #expect(await transport.attempts == 2)
         #expect(await transport.sentNames == ["event_0"])
@@ -559,13 +559,13 @@ struct DavyTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
         await transport.respond(with: 429, headers: ["Retry-After": "1"])
-        let analytics = makeDavy(directory: directory, transport: transport)
+        let telemetry = makeDavy(directory: directory, transport: transport)
 
-        analytics.log(.breadcrumb("event_0"))
-        await analytics.flushAndWait()
+        telemetry.log(.breadcrumb("event_0"))
+        await telemetry.flushAndWait()
         await transport.respond(with: 200)
-        analytics.log(.breadcrumb("event_1"))
-        await analytics.flushAndWait()
+        telemetry.log(.breadcrumb("event_1"))
+        await telemetry.flushAndWait()
         #expect(await transport.attempts == 1)
 
         #expect(await waitUntil { await transport.sentNames == ["event_0", "event_1"] })
@@ -577,9 +577,9 @@ struct DavyTests {
         let throttlingTransport = MockTransport()
         await throttlingTransport.respond(with: 503, headers: ["Retry-After": "3600"])
         do {
-            let analytics = makeDavy(directory: directory, transport: throttlingTransport)
-            analytics.log(.breadcrumb("event_0"))
-            await analytics.flushAndWait()
+            let telemetry = makeDavy(directory: directory, transport: throttlingTransport)
+            telemetry.log(.breadcrumb("event_0"))
+            await telemetry.flushAndWait()
         }
 
         let transport = MockTransport()
@@ -617,21 +617,21 @@ struct DavyTests {
         let transport = MockTransport()
         await transport.setDelay(.milliseconds(50))
         await transport.setFailing(true)
-        let analytics = makeDavy(directory: directory, transport: transport, format: .queryString(maxConcurrentRequests: 3))
+        let telemetry = makeDavy(directory: directory, transport: transport, format: .queryString(maxConcurrentRequests: 3))
 
         for index in 0..<6 {
-            analytics.log(.breadcrumb("event_\(index)"))
+            telemetry.log(.breadcrumb("event_\(index)"))
         }
-        await analytics.flushAndWait()
+        await telemetry.flushAndWait()
         // No new requests start once one fails.
         #expect(await transport.concurrencyAtStart == [1, 2, 3])
 
         await transport.setFailing(false)
-        await analytics.flushAndWait()
+        await telemetry.flushAndWait()
 
         // The retry starts with a single request and resumes full concurrency once it succeeds.
         let retryConcurrency = await transport.concurrencyAtStart.dropFirst(3)
-        #expect(retryConcurrency.first == 1)
+        #expect(Array(retryConcurrency.prefix(2)) == [1, 1])
         #expect(retryConcurrency.max() == 3)
         let deliveredNames = await transport.delivered.compactMap { $0.url?.lastPathComponent }
         #expect(Set(deliveredNames) == Set((0..<6).map { "event_\($0)" }))
@@ -642,16 +642,16 @@ struct DavyTests {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
-        let analytics = makeDavy(directory: directory, transport: transport)
+        let telemetry = makeDavy(directory: directory, transport: transport)
 
-        analytics.log(.breadcrumb("checkout_started"))
-        analytics.log(.error("payment_declined", info: ["reason": "card_expired"]))
-        let snapshot = await analytics.debugSnapshot()
+        telemetry.log(.breadcrumb("checkout_started"))
+        telemetry.log(.error("payment_declined", info: ["reason": "card_expired"]))
+        let snapshot = await telemetry.debugSnapshot()
 
         #expect(snapshot.pending.map(\.name) == ["checkout_started", "payment_declined"])
         #expect(snapshot.pending.map(\.isError) == [false, true])
         #expect(snapshot.pending.map { $0.info["reason"] } == [nil, "card_expired"])
-        #expect(snapshot.pending.map(\.sessionID) == [analytics.sessionID, analytics.sessionID])
+        #expect(snapshot.pending.map(\.sessionID) == [telemetry.sessionID, telemetry.sessionID])
         #expect(Set(snapshot.pending.map(\.id)).count == 2)
         #expect(snapshot.sent.isEmpty)
         #expect(snapshot.lastFailure == nil)
@@ -670,14 +670,14 @@ struct DavyTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
         await transport.respond(with: statusCode)
-        let analytics = makeDavy(directory: directory, transport: transport)
+        let telemetry = makeDavy(directory: directory, transport: transport)
 
-        analytics.log(.breadcrumb("checkout_started"))
-        analytics.log(.breadcrumb("checkout_finished"))
-        let pending = await analytics.debugSnapshot().pending
+        telemetry.log(.breadcrumb("checkout_started"))
+        telemetry.log(.breadcrumb("checkout_finished"))
+        let pending = await telemetry.debugSnapshot().pending
         let start = Date.now
-        await analytics.flushAndWait()
-        let snapshot = await analytics.debugSnapshot()
+        await telemetry.flushAndWait()
+        let snapshot = await telemetry.debugSnapshot()
 
         #expect(snapshot.pending.isEmpty)
         #expect(snapshot.sent.map(\.event) == pending)
@@ -690,34 +690,34 @@ struct DavyTests {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
-        let analytics = makeDavy(directory: directory, transport: transport, batchSize: 2, debugHistoryLimit: limit)
+        let telemetry = makeDavy(directory: directory, transport: transport, batchSize: 2, debugHistoryLimit: limit)
 
         for index in 0..<5 {
-            analytics.log(.breadcrumb("event_\(index)"))
+            telemetry.log(.breadcrumb("event_\(index)"))
         }
-        await analytics.flushAndWait()
-        #expect(await analytics.debugSnapshot().sent.map(\.event.name) == expectedNames)
+        await telemetry.flushAndWait()
+        #expect(await telemetry.debugSnapshot().sent.map(\.event.name) == expectedNames)
 
-        analytics.clearDebugHistory()
-        #expect(await analytics.debugSnapshot().sent.isEmpty)
+        telemetry.clearDebugHistory()
+        #expect(await telemetry.debugSnapshot().sent.isEmpty)
     }
 
     @Test func debugSnapshotCountsEventsLoggedAndSentEachMinuteEvenWithoutHistory() async throws {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
-        let analytics = makeDavy(directory: directory, transport: transport, debugHistoryLimit: 0)
+        let telemetry = makeDavy(directory: directory, transport: transport, debugHistoryLimit: 0)
         let start = DavyDebugSnapshot.Activity.minute(containing: .now)
 
-        analytics.log(.breadcrumb("checkout_started"))
-        analytics.log(.breadcrumb("checkout_finished"))
-        let logged = await analytics.debugSnapshot().activity
+        telemetry.log(.breadcrumb("checkout_started"))
+        telemetry.log(.breadcrumb("checkout_finished"))
+        let logged = await telemetry.debugSnapshot().activity
         #expect(logged.reduce(0) { $0 + $1.logged } == 2)
         #expect(logged.reduce(0) { $0 + $1.sent } == 0)
 
-        await analytics.flushAndWait()
-        analytics.clearDebugHistory()
-        let sent = await analytics.debugSnapshot().activity
+        await telemetry.flushAndWait()
+        telemetry.clearDebugHistory()
+        let sent = await telemetry.debugSnapshot().activity
         #expect(sent.reduce(0) { $0 + $1.logged } == 2)
         #expect(sent.reduce(0) { $0 + $1.sent } == 2)
         #expect(sent.allSatisfy { (start...Date.now).contains($0.minute) })
@@ -778,12 +778,12 @@ struct DavyTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
         await transport.setFailing(true)
-        let analytics = makeDavy(directory: directory, transport: transport)
+        let telemetry = makeDavy(directory: directory, transport: transport)
 
-        analytics.log(.breadcrumb("checkout_started"))
+        telemetry.log(.breadcrumb("checkout_started"))
         let start = Date.now
-        await analytics.flushAndWait()
-        let failed = await analytics.debugSnapshot()
+        await telemetry.flushAndWait()
+        let failed = await telemetry.debugSnapshot()
 
         #expect(failed.pending.map(\.name) == ["checkout_started"])
         #expect(failed.sent.isEmpty)
@@ -792,8 +792,8 @@ struct DavyTests {
         #expect((start...Date.now).contains(failure.date))
 
         await transport.setFailing(false)
-        await analytics.flushAndWait()
-        let sent = await analytics.debugSnapshot()
+        await telemetry.flushAndWait()
+        let sent = await telemetry.debugSnapshot()
         #expect(sent.pending.isEmpty)
         #expect(sent.sent.map(\.event) == failed.pending)
         #expect(sent.lastFailure == nil)
@@ -804,17 +804,17 @@ struct DavyTests {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
-        let analytics = makeDavy(directory: directory, transport: transport)
-        var updates = analytics.debugUpdates().makeAsyncIterator()
+        let telemetry = makeDavy(directory: directory, transport: transport)
+        var updates = telemetry.debugUpdates().makeAsyncIterator()
 
         let initial = await updates.next()
         #expect(initial == .empty)
 
-        analytics.log(.breadcrumb("checkout_started"))
+        telemetry.log(.breadcrumb("checkout_started"))
         let logged = try #require(await updates.next())
         #expect(logged.pending.map(\.name) == ["checkout_started"])
 
-        await analytics.flushAndWait()
+        await telemetry.flushAndWait()
         let sent = try #require(await updates.next())
         #expect(sent.pending.isEmpty)
         #expect(sent.sent.map(\.event) == logged.pending)
@@ -825,19 +825,19 @@ struct DavyTests {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
-        let analytics = makeDavy(directory: directory, transport: transport)
+        let telemetry = makeDavy(directory: directory, transport: transport)
 
-        #expect(analytics.measure("sync_work") { 42 } == 42)
+        #expect(telemetry.measure("sync_work") { 42 } == 42)
         struct Failure: Error {}
         #expect(throws: Failure.self) {
-            try analytics.measure("failing_work") { () throws -> Void in throw Failure() }
+            try telemetry.measure("failing_work") { () throws -> Void in throw Failure() }
         }
-        let value = await analytics.measure("async_work") {
+        let value = await telemetry.measure("async_work") {
             await Task.yield()
             return "done"
         }
         #expect(value == "done")
-        await analytics.flushAndWait()
+        await telemetry.flushAndWait()
 
         let events = await transport.sentEvents
         #expect(events.map(\.name) == ["sync_work", "failing_work", "async_work"])
@@ -852,10 +852,10 @@ struct DavyTests {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
-        let analytics = makeDavy(directory: directory, transport: transport)
+        let telemetry = makeDavy(directory: directory, transport: transport)
 
-        analytics.log(DavyError.invalidRequest, name: "request_failed", info: ["error_type": "custom", "stage": "upload"])
-        await analytics.flushAndWait()
+        telemetry.log(DavyError.invalidRequest, name: "request_failed", info: ["error_type": "custom", "stage": "upload"])
+        await telemetry.flushAndWait()
 
         let event = try #require(await transport.sentEvents.first)
         #expect(event.type == "error")
@@ -865,12 +865,12 @@ struct DavyTests {
 
     @Test func invalidEventNameCrashesWhenConfiguredTo() async {
         await #expect(processExitsWith: .failure) {
-            let analytics = makeDavy(
+            let telemetry = makeDavy(
                 directory: makeTemporaryDirectory(),
                 transport: MockTransport(),
                 onInvalidEventName: .crash
             )
-            analytics.log(.breadcrumb("checkoutStarted"))
+            telemetry.log(.breadcrumb("checkoutStarted"))
         }
     }
     #endif

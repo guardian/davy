@@ -63,6 +63,58 @@ private func changingBody(of request: URLRequest, _ change: (inout [String: Any]
 /// Checks that Davy sends exactly the requests described by `Spec/openapi.yaml`, and handles the
 /// responses it describes as it says.
 struct SpecConformanceTests {
+    /// A case in `Spec/fixtures.json`.
+    private struct Fixture: Decodable {
+        struct Format: Decodable {
+            let type: String
+            let method: String?
+        }
+
+        struct Expected: Decodable {
+            let method: String
+            let url: String
+            let headers: [String: String]
+        }
+
+        let name: String
+        let endpoint: URL
+        let format: Format
+        let headers: [String: String]
+        let session: Session
+        let events: [EventRecord]
+        let expected: Expected
+    }
+
+    private struct Fixtures: Decodable {
+        let cases: [Fixture]
+    }
+
+    @Test func requestsMatchTheSharedFixturesExactly() throws {
+        let data = try Data(contentsOf: OpenAPISpec.fileURL.deletingLastPathComponent().appending(path: "fixtures.json"))
+        let fixtures = try DavyJSON.decoder.decode(Fixtures.self, from: data).cases
+        // The expected bodies, as any JSON.
+        let rawCases = try #require((JSONSerialization.jsonObject(with: data) as? [String: Any])?["cases"] as? [[String: Any]])
+        #expect(!fixtures.isEmpty)
+
+        for (fixture, rawCase) in zip(fixtures, rawCases) {
+            let format: DavyConfiguration.RequestFormat = if let method = fixture.format.method {
+                .queryString(method: try #require(DavyConfiguration.HTTPMethod(rawValue: method)))
+            } else {
+                .jsonBatch
+            }
+            let builder = RequestBuilder(configuration: .init(endpoint: fixture.endpoint, format: format, headers: fixture.headers))
+            let request = try builder.request(session: fixture.session, events: fixture.events)
+
+            let comment = Comment(rawValue: fixture.name)
+            #expect(request.httpMethod == fixture.expected.method, comment)
+            #expect(request.url?.absoluteString == fixture.expected.url, comment)
+            let headers = Dictionary(uniqueKeysWithValues: (request.allHTTPHeaderFields ?? [:]).map { ($0.key.lowercased(), $0.value) })
+            #expect(headers == Dictionary(uniqueKeysWithValues: fixture.expected.headers.map { ($0.key.lowercased(), $0.value) }), comment)
+            let body = try request.httpBody.map { try JSONValue(JSONSerialization.jsonObject(with: $0)) }
+            let expectedBody = try ((rawCase["expected"] as? [String: Any])?["body"]).map(JSONValue.init)
+            #expect(body == expectedBody, comment)
+        }
+    }
     @Test(arguments: formats)
     func everyKindOfEventIsSentAsTheSpecDescribes(format: DavyConfiguration.RequestFormat) async throws {
         let spec = try OpenAPISpec.load()
@@ -70,22 +122,22 @@ struct SpecConformanceTests {
             .appending(path: "DavyTests-\(UUID().uuidString)", directoryHint: .isDirectory)
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = RecordingTransport()
-        let analytics = Davy(
+        let telemetry = Davy(
             configuration: DavyConfiguration(endpoint: endpoint, format: format, environment: "beta", storageDirectory: directory),
             transport: transport,
             notificationCenter: nil
         )
 
-        analytics.log(.breadcrumb("checkout_started"))
-        analytics.log(.breadcrumb("payment_selected", info: ["payment_method": "apple_pay", "path": "a/b+c &=?#", "note": "café ☕️"]))
+        telemetry.log(.breadcrumb("checkout_started"))
+        telemetry.log(.breadcrumb("payment_selected", info: ["payment_method": "apple_pay", "path": "a/b+c &=?#", "note": "café ☕️"]))
         // Sent as is, since `onInvalidEventName` defaults to `.send`.
-        analytics.log(.breadcrumb("Checkout Started/Now"))
-        analytics.log(.error("payment_declined", info: ["reason": "card_expired"]))
-        analytics.log(CheckoutError(), name: "checkout_failed")
-        analytics.measure("feed_load") {}
+        telemetry.log(.breadcrumb("Checkout Started/Now"))
+        telemetry.log(.error("payment_declined", info: ["reason": "card_expired"]))
+        telemetry.log(CheckoutError(), name: "checkout_failed")
+        telemetry.measure("feed_load") {}
         // Replaced with a "davy_event_too_large" error.
-        analytics.log(.breadcrumb("large_event", info: ["blob": String(repeating: "x", count: 3000)]))
-        await analytics.flushAndWait()
+        telemetry.log(.breadcrumb("large_event", info: ["blob": String(repeating: "x", count: 3000)]))
+        await telemetry.flushAndWait()
 
         let requests = await transport.requests
         let sentEvents = try requests.reduce(0) { count, request in
@@ -186,7 +238,7 @@ struct SpecConformanceTests {
         case .timestampWithoutMilliseconds:
             try changingQueryItem("timestamp", of: queryString) { _ in "2026-11-09T11%3A38%3A55Z" }
         case .unknownOS:
-            try changingQueryItem("os", of: queryString) { _ in "Android" }
+            try changingQueryItem("os", of: queryString) { _ in "Windows" }
         case .emptyInfo:
             try changingQueryItem("info", of: queryString) { _ in "%7B%7D" }
         case .emptyName:

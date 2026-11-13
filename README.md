@@ -42,6 +42,7 @@ Davy is built for big-picture reporting: how often something happens, which erro
 - [Privacy](#privacy)
 - [Example app](#example-app)
 - [Running the tests](#running-the-tests)
+- [Android](#android)
 
 ## Requirements
 
@@ -78,14 +79,14 @@ Create one instance when your app launches, and keep it for the app's lifetime:
 ```swift
 import Davy
 
-let analytics = Davy(configuration: .init(
+let telemetry = Davy(configuration: .init(
     endpoint: URL(string: "https://api.example.com/events")!,
     environment: "production",
     headers: ["Authorization": "Bearer <token>"]
 ))
 
 // Davy doesn't log launches, so log your own to count sessions.
-analytics.log(.breadcrumb("app_launched"))
+telemetry.log(.breadcrumb("app_launched"))
 ```
 
 - **Use one instance per storage directory.** Each instance starts a new session and owns the events in its [`storageDirectory`](#configuration), so creating several that share a directory can send events twice. Keep it in your app's dependency container, or see [SwiftUI](#swiftui).
@@ -98,13 +99,13 @@ analytics.log(.breadcrumb("app_launched"))
 
 ```swift
 // A breadcrumb records that something happened.
-analytics.log(.breadcrumb("checkout_started"))
+telemetry.log(.breadcrumb("checkout_started"))
 
 // Optionally add details as a dictionary of strings.
-analytics.log(.breadcrumb("payment_selected", info: ["payment_method": "apple_pay"]))
+telemetry.log(.breadcrumb("payment_selected", info: ["payment_method": "apple_pay"]))
 
 // An error records that something went wrong.
-analytics.log(.error("payment_declined", info: ["reason": "card_expired"]))
+telemetry.log(.error("payment_declined", info: ["reason": "card_expired"]))
 ```
 
 Errors and breadcrumbs complement each other. Errors catch the failures you anticipated and handled. Breadcrumbs catch the ones you didn't: if signing in quietly stops working, there may be no error to count, but there will be a drop in `sign_in_completed`.
@@ -121,7 +122,7 @@ Pass a Swift `Error` to log it with its type, but not its description, which can
 do {
     try await checkout()
 } catch {
-    analytics.log(error, name: "checkout_failed")
+    telemetry.log(error, name: "checkout_failed")
     // Logs .error("checkout_failed", info: ["error_type": "URLError"])
 }
 ```
@@ -133,7 +134,7 @@ Pass `info` to add details. Any `error_type` key in it is replaced.
 `measure(_:_:)` runs a closure, synchronous or `async`, returns its result, and logs a breadcrumb with how long it took in milliseconds under `duration_ms`:
 
 ```swift
-let feed = try await analytics.measure("feed_load") {
+let feed = try await telemetry.measure("feed_load") {
     try await loadFeed()
 }
 // Logs .breadcrumb("feed_load", info: ["duration_ms": "412"])
@@ -147,10 +148,10 @@ Events are sent automatically; see [When events are sent](#when-events-are-sent)
 
 ```swift
 // Returns immediately.
-analytics.flush()
+telemetry.flush()
 
 // Or wait for the attempt to finish.
-await analytics.flushAndWait()
+await telemetry.flushAndWait()
 ```
 
 Both skip the debounce interval and any retry backoff, but never a pause your server asked for with `Retry-After`. `flushAndWait()` returns once the server has responded to every pending event, or sending stops because of an error or a pause. Events that weren't delivered stay on disk and are sent later.
@@ -172,7 +173,7 @@ Set `onInvalidEventName` to enforce lower snake case names: lowercase ASCII lett
 For example, crash in debug builds so mistakes are fixed before shipping, but never crash in production:
 
 ```swift
-let analytics = Davy(configuration: .init(
+let telemetry = Davy(configuration: .init(
     endpoint: URL(string: "https://api.example.com/events")!,
     onInvalidEventName: {
         #if DEBUG
@@ -205,7 +206,7 @@ Launching isn't logged as `app_foregrounded`, so every `app_foregrounded` follow
 
 ## SwiftUI
 
-Create the instance in your `App`, and pass it to your views through the environment with `\.analytics`:
+Create the instance in your `App`, and pass it to your views through the environment with `\.telemetry`:
 
 ```swift
 import Davy
@@ -213,18 +214,18 @@ import SwiftUI
 
 @main
 struct MyApp: App {
-    private let analytics = Davy(configuration: .init(
+    private let telemetry = Davy(configuration: .init(
         endpoint: URL(string: "https://api.example.com/events")!
     ))
 
     init() {
-        analytics.log(.breadcrumb("app_launched"))
+        telemetry.log(.breadcrumb("app_launched"))
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environment(\.analytics, analytics)
+                .environment(\.telemetry, telemetry)
         }
     }
 }
@@ -234,11 +235,11 @@ Read it in any view. It's `nil` by default, so previews and views outside your a
 
 ```swift
 struct CheckoutView: View {
-    @Environment(\.analytics) private var analytics
+    @Environment(\.telemetry) private var telemetry
 
     var body: some View {
         Button("Pay") {
-            analytics?.log(.breadcrumb("pay_tapped"))
+            telemetry?.log(.breadcrumb("pay_tapped"))
         }
         .logBreadcrumb("checkout_viewed")
     }
@@ -257,7 +258,7 @@ import UserNotifications
 
 final class NotificationService: UNNotificationServiceExtension {
     // One instance per process, which the system may reuse for several notifications.
-    static let analytics = Davy(configuration: .init(
+    static let telemetry = Davy(configuration: .init(
         endpoint: URL(string: "https://api.example.com/events")!
     ))
 
@@ -266,9 +267,9 @@ final class NotificationService: UNNotificationServiceExtension {
         withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void
     ) {
         let pushID = request.content.userInfo["push_id"] as? String ?? "unknown"
-        Self.analytics.log(.breadcrumb("push_received", info: ["push_id": pushID]))
+        Self.telemetry.log(.breadcrumb("push_received", info: ["push_id": pushID]))
         Task {
-            await Self.analytics.flushAndWait()
+            await Self.telemetry.flushAndWait()
             contentHandler(request.content)
         }
     }
@@ -284,7 +285,7 @@ final class NotificationService: UNNotificationServiceExtension {
 
 `DavyDebugView` lists the events waiting to be sent and the events sent since launch, so you can check what your app logs during development. It opens on an overview showing the current session ID, how many events are pending, and how many were logged and sent in the last hour, with a line chart of both per minute over a rolling one-hour window and dotted lines where each session's first event was logged. The events list shows pending and sent events together, most recently logged first, with an icon showing whether each has been sent. Select an event to see its ID, timestamps, status, `info`, session data, and JSON. If sending fails, the reason is shown at the top of the overview and the events list. The toolbar sends pending events now and clears the sent history.
 
-Present it from a debug menu. It shows the instance set in the environment with `\.analytics`:
+Present it from a debug menu. It shows the instance set in the environment with `\.telemetry`:
 
 ```swift
 @State private var showsDebugEvents = false
@@ -295,18 +296,18 @@ Button("Debug Events") {
 .davyDebugSheet(isPresented: $showsDebugEvents)
 ```
 
-Or present `DavyDebugView(analytics: analytics)` yourself. It has its own `NavigationStack`, so present it rather than pushing it. It's a development tool, so its text is in English and isn't localized.
+Or present `DavyDebugView(telemetry: telemetry)` yourself. It has its own `NavigationStack`, so present it rather than pushing it. It's a development tool, so its text is in English and isn't localized.
 
 To build your own tools, read the same data with `debugSnapshot()`, or get a new snapshot each time it changes with `debugUpdates()`:
 
 ```swift
-let snapshot = await analytics.debugSnapshot()
+let snapshot = await telemetry.debugSnapshot()
 print(snapshot.pending.map(\.name)) // Oldest first, the order they're sent in
 print(snapshot.sent.map(\.sentAt)) // Oldest first
 print(snapshot.lastFailure?.reason) // nil once a request succeeds
 print(snapshot.activity.map(\.logged)) // Events logged each minute over the last hour
 
-for await snapshot in analytics.debugUpdates() {
+for await snapshot in telemetry.debugUpdates() {
     // Called right away, then each time events are logged, sent, or fail to send.
 }
 ```
@@ -315,7 +316,7 @@ for await snapshot in analytics.debugUpdates() {
 - Sent events include events the server rejected, with `outcome` `.rejected(statusCode:)`. They're kept in memory only, up to `debugHistoryLimit` (default 200), oldest dropped first. Set it to `0` to keep none, and call `clearDebugHistory()` to empty it.
 - `activity` counts the events logged and sent in each minute of the last hour, leaving out quiet minutes. It includes events left over from earlier launches, counted as logged when they were logged. It's kept in memory regardless of `debugHistoryLimit`, and `clearDebugHistory()` doesn't empty it.
 - `sessionStarts` lists when each session's first event was logged, for sessions that started in the last hour, including sessions from earlier launches whose events were still pending.
-- `analytics.sessionID` is the ID sent with this launch's events, so you can find them on your server.
+- `telemetry.sessionID` is the ID sent with this launch's events, so you can find them on your server.
 
 ## Configuration
 
@@ -522,7 +523,7 @@ swift test
 
 Or open `Package.swift` in Xcode and choose **Product > Test**.
 
-`SpecConformanceTests` checks that requests match [`Spec/openapi.yaml`](Spec/openapi.yaml) for every request format. It sends every kind of event through Davy, then checks each request against the spec's schemas and its written rules for query strings: parameter order and percent-encoding. It also checks that Davy handles every status code as the spec describes. Change the spec and the client together so both stay in step. The tests read the spec with [Yams](https://github.com/jpsim/Yams). Only the tests depend on it, so apps using Davy never fetch it.
+`SpecConformanceTests` checks that requests match [`Spec/openapi.yaml`](Spec/openapi.yaml) for every request format. It sends every kind of event through Davy, then checks each request against the spec's schemas and its written rules for query strings: parameter order and percent-encoding. It also checks that Davy builds the requests in [`Spec/fixtures.json`](Spec/fixtures.json) exactly, byte for byte, and handles every status code as the spec describes. The [Android client's](#android) tests check the same spec and fixtures, so both clients send the same requests. Change the spec, the fixtures, and both clients together. The tests read the spec with [Yams](https://github.com/jpsim/Yams). Only the tests depend on it, so apps using Davy never fetch it.
 
 To lint the OpenAPI document after changing it (requires Node.js):
 
@@ -531,3 +532,56 @@ npx @redocly/cli lint Spec/openapi.yaml
 ```
 
 It reports two expected warnings: there's no license, and the server is `example.com`.
+
+## Android
+
+A Kotlin client for Android lives in [`Android/`](Android). It sends the same requests as the Swift client, with `os` set to `Android`, and its tests check them against the same [spec](Spec/openapi.yaml) and [fixtures](Spec/fixtures.json). It supports Android 6.0 (API 23) or later and, like the Swift client, has no dependencies. It isn't published to a Maven repository yet.
+
+```kotlin
+class MyApplication : Application() {
+    lateinit var telemetry: Davy
+
+    override fun onCreate() {
+        super.onCreate()
+        telemetry = Davy(this, DavyConfiguration(
+            endpoint = URI("https://api.example.com/events"),
+            environment = if (BuildConfig.DEBUG) "debug" else "production",
+        ))
+        telemetry.log(Event.Breadcrumb("app_launched"))
+    }
+}
+
+telemetry.log(Event.Breadcrumb("payment_selected", mapOf("payment_method" to "google_pay")))
+telemetry.log(Event.Error("payment_declined", mapOf("reason" to "card_expired")))
+// Adds the exception's class, but not its message, under `error_type`.
+telemetry.log(exception, "checkout_failed")
+val feed = telemetry.measure("feed_load") { loadFeed() }
+```
+
+It works like the Swift client, with the same configuration options, apart from those for the debug view, and the same delivery and privacy rules. The differences are:
+
+- `flushAndWait()` is a `suspend` function, and `close()` stops an instance, for example in tests.
+- `onInvalidEventName = InvalidEventNameAction.CRASH` throws an `IllegalArgumentException` from `log`.
+- Pending events are stored in the app's no-backup files directory, so they're never backed up.
+- The app is in the background once none of its activities are started. Android can suspend the app soon after, so sending when the app moves to the background is best effort; anything not sent goes on the next launch.
+- Errors' diagnostics use the same keys with Android's values, described in the spec's `Info` schema.
+- Requests use `HttpURLConnection`, which sends and stores cookies only if the app installs a default `java.net.CookieHandler`.
+- There's no debug view or debug snapshot yet.
+
+### Android example app
+
+`Android/example` is an app that owns one instance in its `Application` subclass, logs events from buttons, and sends them when it moves to the background. Its configuration sets every option, with a comment explaining each one. Like the iOS example app, its endpoint is a placeholder, so sends fail and are retried; watch them in Logcat with the `Davy` tag. Run it from Android Studio, or with `./gradlew :example:installDebug`.
+
+### Running the Android tests
+
+Open the `Android` folder in Android Studio, or use the command line with `JAVA_HOME` set to JDK 17 or later, such as the one bundled with Android Studio:
+
+```sh
+cd Android
+# Unit tests, including the spec and fixtures.
+./gradlew test
+# Device tests, on a running emulator or connected device.
+./gradlew connectedAndroidTest
+```
+
+The unit tests mirror the Swift client's tests. The device tests check what only a real device can: the session data and diagnostics Davy reads from Android, and sending over Android's HTTP stack.

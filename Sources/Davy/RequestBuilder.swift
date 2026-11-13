@@ -70,7 +70,7 @@ struct RequestBuilder: Sendable {
         let parameters: [(name: String, value: String?)] = [
             ("eventId", event.id.uuidString),
             ("type", event.type.rawValue),
-            ("timestamp", event.timestamp.formatted(DavyJSON.timestampStyle)),
+            ("timestamp", DavyJSON.timestamp(event.timestamp)),
             ("sessionId", session.id.uuidString),
             ("environment", session.environment),
             ("appVersion", session.appVersion),

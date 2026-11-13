@@ -18,9 +18,24 @@ struct PendingEvent: Codable, Sendable {
 
 /// The fixed JSON encoding used for both storage and requests, so every app sends the same shape.
 enum DavyJSON {
-    /// How timestamps are written: ISO 8601 in UTC with fractional seconds, for example
+    /// How timestamps are parsed: ISO 8601 in UTC with fractional seconds, for example
     /// `2026-11-09T11:38:55.780Z`.
     static let timestampStyle = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+
+    /// `date` as ISO 8601 in UTC with milliseconds, for example `2026-11-09T11:38:55.780Z`.
+    ///
+    /// Rounded to the nearest millisecond rather than truncated, as ``timestampStyle`` would, so a
+    /// timestamp read back from disk, which `Date` can't always hold exactly, is sent unchanged.
+    static func timestamp(_ date: Date) -> String {
+        let milliseconds = Int64((date.timeIntervalSince1970 * 1000).rounded())
+        var (seconds, millisecond) = milliseconds.quotientAndRemainder(dividingBy: 1000)
+        if millisecond < 0 {
+            seconds -= 1
+            millisecond += 1000
+        }
+        let wholeSeconds = Date(timeIntervalSince1970: TimeInterval(seconds)).formatted(Date.ISO8601FormatStyle())
+        return wholeSeconds.dropLast() + String(format: ".%03dZ", Int(millisecond))
+    }
 
     static let encoder = makeEncoder()
 
@@ -32,7 +47,7 @@ enum DavyJSON {
         encoder.outputFormatting = outputFormatting
         encoder.dateEncodingStrategy = .custom { date, encoder in
             var container = encoder.singleValueContainer()
-            try container.encode(date.formatted(timestampStyle))
+            try container.encode(timestamp(date))
         }
         return encoder
     }

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Davy Example</string>
+    <string name="session_header">Session ID</string>
+    <string name="session_footer">Generated each launch and never stored, so events can be linked within a session but not to a user or device.</string>
+    <string name="log_events_header">Log Events</string>
+    <string name="log_breadcrumb">Log Breadcrumb</string>
+    <string name="notifications">Notifications</string>
+    <string name="log_error">Log Error</string>
+    <string name="log_events_footer">log() returns immediately. Each event is written to disk, then sent in a batch once batchSize events are pending or after debounceInterval passes without a new one.</string>
+    <string name="flush_header">Send Events</string>
+    <string name="flush">Send Pending Events Now</string>
+    <string name="flush_footer">Pending events are also sent when the app moves to the background and on the next launch. Failed sends are retried automatically.</string>
+</resources>

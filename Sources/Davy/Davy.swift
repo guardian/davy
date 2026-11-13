@@ -4,11 +4,11 @@ import os
 /// Logs breadcrumbs and errors, persists them to disk, and sends them to your endpoint.
 ///
 /// ```swift
-/// let analytics = Davy(configuration: .init(
+/// let telemetry = Davy(configuration: .init(
 ///     endpoint: URL(string: "https://api.example.com/events")!
 /// ))
-/// analytics.log(.breadcrumb("checkout_started"))
-/// analytics.log(.error("payment_declined"))
+/// telemetry.log(.breadcrumb("checkout_started"))
+/// telemetry.log(.error("payment_declined"))
 /// ```
 ///
 /// `log(_:)` and `flush()` are synchronous and can be called from any thread. Events are processed
@@ -184,8 +184,8 @@ public final class Davy: Sendable {
     /// extension, which isn't flushed automatically:
     ///
     /// ```swift
-    /// analytics.log(.breadcrumb("push_received", info: ["push_id": pushID]))
-    /// await analytics.flushAndWait()
+    /// telemetry.log(.breadcrumb("push_received", info: ["push_id": pushID]))
+    /// await telemetry.flushAndWait()
     /// contentHandler(content)
     /// ```
     ///
@@ -224,7 +224,7 @@ public final class Davy: Sendable {
     /// only get the latest one.
     ///
     /// ```swift
-    /// for await snapshot in analytics.debugUpdates() {
+    /// for await snapshot in telemetry.debugUpdates() {
     ///     print("\(snapshot.pending.count) pending, \(snapshot.sent.count) sent")
     /// }
     /// ```

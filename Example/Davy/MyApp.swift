@@ -8,7 +8,7 @@ import Davy
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environment(\.analytics, telemetry)
+                .environment(\.telemetry, telemetry)
         }
     }
 

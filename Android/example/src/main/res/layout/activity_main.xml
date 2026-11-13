@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            style="@style/Header"
+            android:text="@string/session_header" />
+
+        <TextView
+            android:id="@+id/session_id"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:textIsSelectable="true"
+            android:textSize="13sp" />
+
+        <TextView
+            style="@style/Footer"
+            android:text="@string/session_footer" />
+
+        <TextView
+            style="@style/Header"
+            android:text="@string/log_events_header" />
+
+        <Button
+            android:id="@+id/log_breadcrumb"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/log_breadcrumb" />
+
+        <Switch
+            android:id="@+id/notifications"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/notifications" />
+
+        <Button
+            android:id="@+id/log_error"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/log_error" />
+
+        <TextView
+            style="@style/Footer"
+            android:text="@string/log_events_footer" />
+
+        <TextView
+            style="@style/Header"
+            android:text="@string/flush_header" />
+
+        <Button
+            android:id="@+id/flush"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/flush" />
+
+        <TextView
+            style="@style/Footer"
+            android:text="@string/flush_footer" />
+    </LinearLayout>
+</ScrollView>
