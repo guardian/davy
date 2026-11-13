@@ -282,7 +282,7 @@ public class DavyDebugActivity : Activity() {
             note.text = when {
                 items.isEmpty() && limit > 0 -> "No events. Logged events are listed here, and stay listed once sent until the app quits."
                 items.isEmpty() -> "No events. Logged events are listed here until they're sent."
-                listed.isEmpty() -> "No events match the search and filter."
+                listed.isEmpty() -> eventFilter.noMatchesDescription(searchText)
                 limit > 0 -> "Sent events are kept until the app quits, up to $limit."
                 else -> "Sent events aren't kept because debugHistoryLimit is 0."
             }

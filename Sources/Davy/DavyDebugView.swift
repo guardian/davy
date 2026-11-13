@@ -150,6 +150,16 @@ enum DebugEventFilter: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Why no events are listed when this filter and `searchText` match none.
+    func noMatchesDescription(searchText: String) -> String {
+        let isSearching = !searchText.trimmingCharacters(in: .whitespaces).isEmpty
+        switch (isSearching, self) {
+        case (true, .all): return "No events match the search."
+        case (true, _): return "No events match the search and filter."
+        default: return "No events match the filter."
+        }
+    }
+
     func includes(_ item: DebugEventItem) -> Bool {
         switch (self, item.status) {
         case (.all, _), (.pending, .pending), (.sent, .sent(_, .delivered)), (.rejected, .sent(_, .rejected)):
@@ -211,9 +221,16 @@ private struct DebugEventsScreen: View {
                 DebugEventsList(
                     model: model,
                     sentHistoryLimit: telemetry.configuration.debugHistoryLimit,
-                    searchText: $searchText,
+                    searchText: searchText,
                     filter: $filter
                 )
+            }
+        }
+        // On both pages, so the layout doesn't move when switching between them.
+        .searchable(text: $searchText, prompt: Text(verbatim: "Name, info, or ID"))
+        .onChange(of: searchText) { _, text in
+            if !text.isEmpty {
+                selection = .events
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -582,7 +599,7 @@ private struct DebugFailureDetail: View {
 private struct DebugEventsList: View {
     let model: DebugEventsModel
     let sentHistoryLimit: Int
-    @Binding var searchText: String
+    let searchText: String
     @Binding var filter: DebugEventFilter
 
     var body: some View {
@@ -613,13 +630,23 @@ private struct DebugEventsList: View {
                         DebugEventRow(event: item.event, status: item.status)
                     }
                 }
+                if events.isEmpty && !model.events.isEmpty {
+                    ContentUnavailableView {
+                        Label {
+                            Text(verbatim: "No Matching Events")
+                        } icon: {
+                            Image(systemName: "magnifyingglass")
+                        }
+                    } description: {
+                        Text(verbatim: filter.noMatchesDescription(searchText: searchText))
+                    }
+                }
             } footer: {
                 if !events.isEmpty {
                     DebugSentHistoryNote(limit: sentHistoryLimit)
                 }
             }
         }
-        .searchable(text: $searchText, prompt: Text(verbatim: "Name, info, or ID"))
         .overlay {
             if !model.isLoaded {
                 ProgressView()
@@ -636,16 +663,6 @@ private struct DebugEventsList: View {
                     } else {
                         Text(verbatim: "Logged events are listed here until they're sent.")
                     }
-                }
-            } else if events.isEmpty && !model.events.isEmpty {
-                ContentUnavailableView {
-                    Label {
-                        Text(verbatim: "No Matching Events")
-                    } icon: {
-                        Image(systemName: "magnifyingglass")
-                    }
-                } description: {
-                    Text(verbatim: "No events match the search and filter.")
                 }
             }
         }

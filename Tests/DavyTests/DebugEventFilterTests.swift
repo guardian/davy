@@ -66,6 +66,12 @@ struct DebugEventFilterTests {
         #expect(names(searchText: "refund").isEmpty)
         #expect(names(.pending, searchText: "payment").isEmpty)
     }
+
+    @Test func emptyResultsExplainWhatNarrowedThem() {
+        #expect(DebugEventFilter.sent.noMatchesDescription(searchText: " ") == "No events match the filter.")
+        #expect(DebugEventFilter.all.noMatchesDescription(searchText: "refund") == "No events match the search.")
+        #expect(DebugEventFilter.sent.noMatchesDescription(searchText: "refund") == "No events match the search and filter.")
+    }
 }
 
 private func loggedEvent(

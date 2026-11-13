@@ -66,4 +66,11 @@ class DebugEventQueryTest {
         assertEquals(emptyList<String>(), names(searchText = "refund"))
         assertEquals(emptyList<String>(), names(DebugEventFilter.PENDING, searchText = "payment"))
     }
+
+    @Test
+    fun emptyResultsExplainWhatNarrowedThem() {
+        assertEquals("No events match the filter.", DebugEventFilter.SENT.noMatchesDescription(" "))
+        assertEquals("No events match the search.", DebugEventFilter.ALL.noMatchesDescription("refund"))
+        assertEquals("No events match the search and filter.", DebugEventFilter.SENT.noMatchesDescription("refund"))
+    }
 }

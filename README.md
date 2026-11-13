@@ -283,7 +283,7 @@ final class NotificationService: UNNotificationServiceExtension {
 
 ## Debugging events
 
-`DavyDebugView` lists the events waiting to be sent and the events sent since launch, so you can check what your app logs during development. It opens on an overview showing the current session ID, how many events are pending, and how many were logged and sent in the last hour, with a line chart of both per minute over a rolling one-hour window and dotted lines where each session's first event was logged. The events list shows pending and sent events together, most recently logged first, with an icon showing whether each has been sent. Select an event to see its ID, timestamps, status, `info`, session data, and JSON. If sending fails, the reason is shown at the top of the overview and the events list. The toolbar sends pending events now and clears the sent history.
+`DavyDebugView` lists the events waiting to be sent and the events sent since launch, so you can check what your app logs during development. It opens on an overview showing the current session ID, how many events are pending, and how many were logged and sent in the last hour, with a line chart of both per minute over a rolling one-hour window and dotted lines where each session's first event was logged. The events list shows pending and sent events together, most recently logged first, with an icon showing whether each has been sent. Search it by name, `info` key or value, or event ID, and filter it to show only pending, sent, rejected, or error events. Select an event to see its ID, timestamps, status, `info`, session data, and JSON. If sending fails, the reason is shown at the top of the overview and the events list. The toolbar sends pending events now and clears the sent history.
 
 Present it from a debug menu. It shows the instance set in the environment with `\.telemetry`:
 
@@ -558,7 +558,7 @@ telemetry.log(exception, "checkout_failed")
 val feed = telemetry.measure("feed_load") { loadFeed() }
 ```
 
-It works like the Swift client, with the same configuration options, apart from those for the debug view, and the same delivery and privacy rules. The differences are:
+It works like the Swift client, with the same configuration options and the same delivery and privacy rules. The differences are:
 
 - `flushAndWait()` is a `suspend` function, and `close()` stops an instance, for example in tests.
 - `onInvalidEventName = InvalidEventNameAction.CRASH` throws an `IllegalArgumentException` from `log`.
@@ -566,11 +566,29 @@ It works like the Swift client, with the same configuration options, apart from 
 - The app is in the background once none of its activities are started. Android can suspend the app soon after, so sending when the app moves to the background is best effort; anything not sent goes on the next launch.
 - Errors' diagnostics use the same keys with Android's values, described in the spec's `Info` schema.
 - Requests use `HttpURLConnection`, which sends and stores cookies only if the app installs a default `java.net.CookieHandler`.
-- There's no debug view or debug snapshot yet.
+- The debug screen is an activity rather than a view, and doesn't chart activity; see below.
+
+### Debugging events on Android
+
+`DavyDebugActivity` is the Android version of `DavyDebugView`, built from Android's own widgets so it adds no dependencies. Start it from a debug menu:
+
+```kotlin
+DavyDebugActivity.start(context, telemetry)
+```
+
+It shows the session ID, how many events are pending, and how many were logged and sent in the last hour, then pending and sent events together, most recently logged first. Search them from the action bar, filter them with **Show**, and select one to see its status, `info`, session data, and JSON. The menu sends pending events now and clears the sent history. Android has no built-in chart, so unlike `DavyDebugView` it doesn't chart each minute's activity; the counts are in the snapshot's `activity`.
+
+To build your own tools, read the same data with the `suspend` function `debugSnapshot()`, or get a new snapshot each time it changes with `addDebugListener`, which calls you on a background thread until you close the `Closeable` it returns:
+
+```kotlin
+val snapshot = telemetry.debugSnapshot()
+val listener = telemetry.addDebugListener { snapshot -> /* Right away, then after each change. */ }
+listener.close()
+```
 
 ### Android example app
 
-`Android/example` is an app that owns one instance in its `Application` subclass, logs events from buttons, and sends them when it moves to the background. Its configuration sets every option, with a comment explaining each one. Like the iOS example app, its endpoint is a placeholder, so sends fail and are retried; watch them in Logcat with the `Davy` tag. Run it from Android Studio, or with `./gradlew :example:installDebug`.
+`Android/example` is an app that owns one instance in its `Application` subclass, logs events from buttons, sends them when it moves to the background, and opens `DavyDebugActivity` from **Debug Events**. Its configuration sets every option, with a comment explaining each one. Like the iOS example app, its endpoint is a placeholder, so sends fail and are retried; watch them in Logcat with the `Davy` tag. Run it from Android Studio, or with `./gradlew :example:installDebug`.
 
 ### Running the Android tests
 

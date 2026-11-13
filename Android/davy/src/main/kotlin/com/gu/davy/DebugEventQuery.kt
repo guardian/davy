@@ -45,6 +45,13 @@ internal enum class DebugEventFilter(val title: String) {
     ERRORS("Errors"),
     ;
 
+    /** Why no events are listed when this filter and [searchText] match none. */
+    fun noMatchesDescription(searchText: String): String = when {
+        searchText.isBlank() -> "No events match the filter."
+        this == ALL -> "No events match the search."
+        else -> "No events match the search and filter."
+    }
+
     fun includes(item: DebugEventItem): Boolean {
         val outcome = (item.status as? DebugEventStatus.Sent)?.outcome
         return when (this) {
