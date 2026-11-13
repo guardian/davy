@@ -118,6 +118,7 @@ internal fun makeDavy(
     headers: Map<String, String> = emptyMap(),
     batchSize: Int = 100,
     debounceInterval: Duration = 60.seconds,
+    debugHistoryLimit: Int = 200,
     lifecycle: LifecycleSource? = null,
     session: Session = testSession(environment),
 ): Davy = Davy(
@@ -132,6 +133,7 @@ internal fun makeDavy(
         batchSize = batchSize,
         debounceInterval = debounceInterval,
         storageDirectory = directory,
+        debugHistoryLimit = debugHistoryLimit,
     ),
     session = session,
     storageDirectory = directory,
@@ -156,6 +158,12 @@ internal fun runSuspending(block: suspend () -> Unit) {
 }
 
 internal fun Davy.flushAndWaitBlocking() = runSuspending { flushAndWait() }
+
+internal fun Davy.debugSnapshotBlocking(): DavyDebugSnapshot {
+    var snapshot: DavyDebugSnapshot? = null
+    runSuspending { snapshot = debugSnapshot() }
+    return snapshot!!
+}
 
 /** Polls [condition] until it holds or [timeoutMillis] elapses. */
 internal fun waitUntil(timeoutMillis: Long = 5_000, condition: () -> Boolean): Boolean {

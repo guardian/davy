@@ -11,4 +11,7 @@
     <string name="flush_header">Send Events</string>
     <string name="flush">Send Pending Events Now</string>
     <string name="flush_footer">Pending events are also sent when the app moves to the background and on the next launch. Failed sends are retried automatically.</string>
+    <string name="debug_header">Debug</string>
+    <string name="debug_events">Debug Events</string>
+    <string name="debug_footer">Lists events waiting to be sent and events sent since launch, with everything each one is sent with.</string>
 </resources>

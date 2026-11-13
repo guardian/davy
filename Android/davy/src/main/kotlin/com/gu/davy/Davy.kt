@@ -160,6 +160,33 @@ public class Davy internal constructor(
     }
 
     /**
+     * Returns the events waiting to be sent, the events recently sent, and the most recent failure
+     * to send, for checking your events during development. [DavyDebugActivity] shows the same
+     * information. Includes every event logged before this call.
+     */
+    public suspend fun debugSnapshot(): DavyDebugSnapshot = suspendCoroutine { continuation ->
+        pipeline.debugSnapshot { continuation.resume(it) }
+    }
+
+    /**
+     * Calls [listener] with a [DavyDebugSnapshot] right away, then each time events are logged,
+     * sent, or fail to send, until you close the returned [Closeable]. Changes made close together
+     * produce a single snapshot.
+     *
+     * [listener] is called on a background thread, one call at a time, so switch to the main
+     * thread to update views.
+     */
+    public fun addDebugListener(listener: (DavyDebugSnapshot) -> Unit): Closeable = pipeline.addDebugListener(listener)
+
+    /**
+     * Forgets the events recorded as sent, so [DavyDebugSnapshot.sent] starts empty again. Pending
+     * events aren't affected.
+     */
+    public fun clearDebugHistory() {
+        pipeline.clearDebugHistory()
+    }
+
+    /**
      * Stops observing the app's lifecycle and sending events. Events that haven't been sent stay on
      * disk, and are sent by the next instance that uses the same storage directory.
      */

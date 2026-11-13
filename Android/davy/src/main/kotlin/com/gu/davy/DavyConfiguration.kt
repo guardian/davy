@@ -40,6 +40,9 @@ import kotlin.time.Duration.Companion.seconds
  * @property maxEventAge Events older than this are discarded without being sent.
  * @property storageDirectory The directory where pending events are stored, or `null` for
  *   [Davy.defaultStorageDirectory]. Each [Davy] instance should use its own directory.
+ * @property debugHistoryLimit How many sent events to keep in memory for [Davy.debugSnapshot] and
+ *   [DavyDebugActivity]. The oldest are dropped once there are more. `0` keeps none. The history
+ *   isn't stored on disk, so it starts empty each time an instance is created.
  */
 public data class DavyConfiguration(
     val endpoint: URI,
@@ -53,6 +56,7 @@ public data class DavyConfiguration(
     val debounceInterval: Duration = 10.seconds,
     val maxEventAge: Duration = 30.days,
     val storageDirectory: File? = null,
+    val debugHistoryLimit: Int = 200,
 )
 
 /** How events are encoded into HTTP requests. */

@@ -66,5 +66,19 @@
         <TextView
             style="@style/Footer"
             android:text="@string/flush_footer" />
+
+        <TextView
+            style="@style/Header"
+            android:text="@string/debug_header" />
+
+        <Button
+            android:id="@+id/debug_events"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/debug_events" />
+
+        <TextView
+            style="@style/Footer"
+            android:text="@string/debug_footer" />
     </LinearLayout>
 </ScrollView>

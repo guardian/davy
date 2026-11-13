@@ -34,6 +34,9 @@ internal class FileEventStore(private val directory: File) {
 
     val count: Int get() = fileNames.size
 
+    /** When each pending event was logged, oldest first, read from the file names. */
+    val loggedTimes: List<Long> get() = fileNames.mapNotNull(::loggedAt)
+
     @Throws(IOException::class)
     fun append(data: ByteArray, loggedAtMillis: Long) {
         val name = String.format(Locale.ROOT, "%015d-%010d-%s%s", loggedAtMillis, sequence, UUID.randomUUID().toString().uppercase(Locale.ROOT), EXTENSION)

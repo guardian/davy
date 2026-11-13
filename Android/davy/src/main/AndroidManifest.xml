@@ -3,4 +3,12 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <application>
+        <!-- Lists pending and sent events during development. Only Davy starts it. -->
+        <activity
+            android:name=".DavyDebugActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Material.Light.DarkActionBar" />
+    </application>
+
 </manifest>

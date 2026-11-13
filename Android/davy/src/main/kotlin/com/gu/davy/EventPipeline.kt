@@ -1,14 +1,17 @@
 package com.gu.davy
 
 import android.util.Log
+import java.io.Closeable
 import java.io.File
 import java.io.IOException
+import java.util.UUID
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
+import kotlin.math.ceil
 
 /**
  * Processes logged events in order: persists them, then sends them.
@@ -93,12 +96,27 @@ internal class EventPipeline(
     private var pausedUntil: Long? = null
     private val flushCompletions = mutableListOf<() -> Unit>()
 
+    /** Events the server responded to, oldest first, up to the debug history limit. */
+    private val sentHistory = ArrayDeque<DavyDebugSnapshot.SentEvent>()
+
+    /** The most recent failure to send, cleared once the server responds to a request. */
+    private var lastFailure: DavyDebugSnapshot.Failure? = null
+
+    /** Events logged and sent each minute, oldest first, back to an hour ago. */
+    private val activity = mutableListOf<DavyDebugSnapshot.Activity>()
+
+    /** When the first event this instance knows about was logged, for each session. */
+    private val sessionStarts = mutableMapOf<UUID, Long>()
+    private val debugListeners = linkedMapOf<Any, (DavyDebugSnapshot) -> Unit>()
+    private var isDebugUpdateScheduled = false
+
     /** Reads pending events from disk and starts sending any left over from a previous session. */
     fun start() {
         submit {
             store = FileEventStore(File(storageDirectory, "events"))
             pruneExpiredEvents()
             restorePause()
+            recordLeftoverEventsAsLogged()
             if (store.count > 0) requestSend(force = false)
         }
     }
@@ -127,9 +145,33 @@ internal class EventPipeline(
             debounce?.cancel(false)
             retry?.cancel(false)
             completeFlushes()
+            debugListeners.clear()
         }
         executor.shutdown()
         network.shutdown()
+    }
+
+    /** Calls [onSnapshot] with the current [DavyDebugSnapshot], or an empty one if closed. */
+    fun debugSnapshot(onSnapshot: (DavyDebugSnapshot) -> Unit) {
+        if (!submit { onSnapshot(debugSnapshot()) }) onSnapshot(DavyDebugSnapshot.EMPTY)
+    }
+
+    /** Calls [listener] with a snapshot now and after each change, until the returned [Closeable] is closed. */
+    fun addDebugListener(listener: (DavyDebugSnapshot) -> Unit): Closeable {
+        val token = Any()
+        submit {
+            debugListeners[token] = listener
+            listener(debugSnapshot())
+        }
+        return Closeable { submit { debugListeners.remove(token) } }
+    }
+
+    /** Forgets the events recorded as sent. */
+    fun clearDebugHistory() {
+        submit {
+            sentHistory.clear()
+            debugStateDidChange()
+        }
     }
 
     private fun persist(record: EventRecord) {
@@ -140,6 +182,9 @@ internal class EventPipeline(
             Log.e(TAG, "Failed to store event", exception)
             return
         }
+        recordActivity(logged = 1, atMillis = storedRecord.timestampMillis)
+        recordSessionEvent(session.id, storedRecord.timestampMillis)
+        debugStateDidChange()
         if (store.count >= batchSize) requestSend(force = false) else scheduleDebouncedSend()
     }
 
@@ -224,6 +269,7 @@ internal class EventPipeline(
         when (outcome) {
             DeliveryOutcome.Delivered -> {
                 store.remove(delivery.stored)
+                recordSent(delivery, DavyDebugSnapshot.SentEvent.Outcome.Delivered)
                 consecutiveFailures = 0
                 isProbing = false
                 concurrency = maxConcurrentRequests
@@ -231,16 +277,19 @@ internal class EventPipeline(
             is DeliveryOutcome.Rejected -> {
                 Log.e(TAG, "Discarding ${delivery.events.size} event(s) rejected with HTTP ${outcome.statusCode}")
                 store.remove(delivery.stored)
+                recordSent(delivery, DavyDebugSnapshot.SentEvent.Outcome.Rejected(outcome.statusCode))
                 isProbing = false
                 concurrency = maxConcurrentRequests
             }
             is DeliveryOutcome.Throttled -> {
                 Log.i(TAG, "Server asked to retry after ${outcome.retryAfterSeconds} seconds")
                 pause(outcome.retryAfterSeconds)
+                recordFailure("Server asked to retry after ${ceil(outcome.retryAfterSeconds).toLong()} seconds")
             }
             is DeliveryOutcome.Failed -> {
                 Log.e(TAG, "Failed to send ${delivery.events.size} event(s): ${outcome.reason}")
                 drainFailed = true
+                recordFailure(outcome.reason)
             }
         }
         fill()
@@ -351,7 +400,98 @@ internal class EventPipeline(
     }
 
     private fun pruneExpiredEvents() {
+        val count = store.count
         store.prune(now() - configuration.maxEventAge.inWholeMilliseconds)
+        if (store.count != count) debugStateDidChange()
+    }
+
+    private fun recordSent(delivery: Delivery, outcome: DavyDebugSnapshot.SentEvent.Outcome) {
+        lastFailure = null
+        val sentAt = now()
+        recordActivity(sent = delivery.events.size, atMillis = sentAt)
+        delivery.events.forEach { recordSessionEvent(delivery.session.id, it.timestampMillis) }
+        val limit = configuration.debugHistoryLimit
+        if (limit > 0) {
+            delivery.events.takeLast(limit).forEach { record ->
+                sentHistory.addLast(DavyDebugSnapshot.SentEvent(DavyDebugSnapshot.LoggedEvent(record, delivery.session), sentAt, outcome))
+            }
+            while (sentHistory.size > limit) sentHistory.removeFirst()
+        }
+        debugStateDidChange()
+    }
+
+    private fun recordFailure(reason: String) {
+        lastFailure = DavyDebugSnapshot.Failure(reason, now())
+        debugStateDidChange()
+    }
+
+    /**
+     * Counts events left over from earlier launches as logged when they were, so activity includes
+     * every event this instance knows about. Called before any of this instance's events are
+     * stored, so none are counted twice.
+     */
+    private fun recordLeftoverEventsAsLogged() {
+        val start = DavyDebugSnapshot.activityStart(now())
+        store.loggedTimes.filter { it >= start }.forEach { recordActivity(logged = 1, atMillis = it) }
+    }
+
+    /** Adds to the counts for the minute containing [atMillis], and forgets minutes that are now over an hour old. */
+    private fun recordActivity(logged: Int = 0, sent: Int = 0, atMillis: Long) {
+        val minute = DavyDebugSnapshot.Activity.minuteContaining(atMillis)
+        val index = activity.indexOfFirst { it.minuteMillis == minute }
+        if (index >= 0) {
+            val current = activity[index]
+            activity[index] = current.copy(logged = current.logged + logged, sent = current.sent + sent)
+        } else {
+            // Usually the newest minute, unless the clock moved backwards.
+            val later = activity.indexOfFirst { it.minuteMillis > minute }
+            activity.add(if (later >= 0) later else activity.size, DavyDebugSnapshot.Activity(minute, logged, sent))
+        }
+        val start = DavyDebugSnapshot.activityStart(now())
+        activity.removeAll { it.minuteMillis < start }
+    }
+
+    /**
+     * Moves the session's start earlier if this is the earliest of its events seen so far. Events
+     * left over from earlier launches are seen as they're sent, or read back from disk for a
+     * snapshot, so their sessions are known by the time a snapshot needs them.
+     */
+    private fun recordSessionEvent(sessionId: UUID, loggedAtMillis: Long) {
+        val start = sessionStarts[sessionId]
+        if (start == null || loggedAtMillis < start) sessionStarts[sessionId] = loggedAtMillis
+    }
+
+    /** Every pending event read back from disk, with the sent history, last failure, activity, and session starts. */
+    private fun debugSnapshot(): DavyDebugSnapshot {
+        val pending = store.oldest(store.count).mapNotNull { stored ->
+            DavyJson.parsePendingEvent(stored.data.decodeToString())?.let { (session, event) -> DavyDebugSnapshot.LoggedEvent(event, session) }
+        }
+        pending.forEach { recordSessionEvent(it.sessionId, it.timestampMillis) }
+        val activityStart = DavyDebugSnapshot.activityStart(now())
+        return DavyDebugSnapshot(
+            pending = pending,
+            sent = sentHistory.toList(),
+            lastFailure = lastFailure,
+            activity = activity.filter { it.minuteMillis >= activityStart },
+            sessionStarts = sessionStarts.filterValues { it >= activityStart }
+                .map { (sessionId, date) -> DavyDebugSnapshot.SessionStart(sessionId, date) }
+                .sortedBy { it.dateMillis },
+        )
+    }
+
+    /**
+     * Sends listeners a new snapshot once the current work is done, so a burst of changes, such as
+     * many events logged at once, reads pending events from disk only once.
+     */
+    private fun debugStateDidChange() {
+        if (debugListeners.isEmpty() || isDebugUpdateScheduled) return
+        isDebugUpdateScheduled = true
+        submit {
+            isDebugUpdateScheduled = false
+            if (debugListeners.isEmpty()) return@submit
+            val snapshot = debugSnapshot()
+            debugListeners.values.toList().forEach { it(snapshot) }
+        }
     }
 
     private fun now() = System.currentTimeMillis()

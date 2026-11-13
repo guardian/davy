@@ -84,7 +84,7 @@ private enum DebugPage: Hashable {
 }
 
 /// Where an event is in its journey to the server.
-private enum DebugEventStatus: Equatable {
+enum DebugEventStatus: Equatable {
     case pending
     case sent(at: Date, outcome: DavyDebugSnapshot.SentEvent.Outcome)
     /// Neither pending nor in the sent history, for example because it expired or the history
@@ -93,11 +93,73 @@ private enum DebugEventStatus: Equatable {
 }
 
 /// An event in the list, pending or sent.
-private struct DebugEventItem: Identifiable {
+struct DebugEventItem: Identifiable {
     let event: DavyDebugSnapshot.LoggedEvent
     let status: DebugEventStatus
 
     var id: UUID { event.id }
+
+    /// Pending and sent events together, most recently logged first.
+    static func all(in snapshot: DavyDebugSnapshot) -> [DebugEventItem] {
+        let sent = snapshot.sent.map { sentEvent in
+            DebugEventItem(event: sentEvent.event, status: .sent(at: sentEvent.sentAt, outcome: sentEvent.outcome))
+        }
+        let sentIDs = Set(sent.map(\.id))
+        let pending = snapshot.pending
+            .filter { !sentIDs.contains($0.id) }
+            .map { DebugEventItem(event: $0, status: .pending) }
+        // Both lists are oldest first, so the later of two events logged at the same time comes
+        // first too.
+        return (sent + pending).enumerated()
+            .sorted { first, second in
+                guard first.element.event.timestamp != second.element.event.timestamp else {
+                    return first.offset > second.offset
+                }
+                return first.element.event.timestamp > second.element.event.timestamp
+            }
+            .map(\.element)
+    }
+
+    /// Whether the event's name, an `info` key or value, or its ID contains `searchText`,
+    /// ignoring case and surrounding spaces. Empty text matches every event.
+    func matches(searchText: String) -> Bool {
+        let text = searchText.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return true }
+        let fields = [event.name, event.id.uuidString] + event.info.flatMap { [$0.key, $0.value] }
+        return fields.contains { $0.localizedCaseInsensitiveContains(text) }
+    }
+}
+
+/// Which events the events list shows.
+enum DebugEventFilter: String, CaseIterable, Identifiable {
+    case all
+    case pending
+    case sent
+    case rejected
+    case errors
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .all: "All"
+        case .pending: "Pending"
+        case .sent: "Sent"
+        case .rejected: "Rejected"
+        case .errors: "Errors"
+        }
+    }
+
+    func includes(_ item: DebugEventItem) -> Bool {
+        switch (self, item.status) {
+        case (.all, _), (.pending, .pending), (.sent, .sent(_, .delivered)), (.rejected, .sent(_, .rejected)):
+            true
+        case (.errors, _):
+            item.event.isError
+        default:
+            false
+        }
+    }
 }
 
 /// The latest ``DavyDebugSnapshot`` of an instance.
@@ -117,7 +179,7 @@ private final class DebugEventsModel {
     /// Keeps the model up to date until the calling task is cancelled.
     func observe(_ telemetry: Davy) async {
         for await snapshot in telemetry.debugUpdates() {
-            events = Self.events(in: snapshot)
+            events = DebugEventItem.all(in: snapshot)
             pendingCount = snapshot.pending.count
             sentCount = snapshot.sent.count
             lastFailure = snapshot.lastFailure
@@ -130,23 +192,15 @@ private final class DebugEventsModel {
     func status(of id: UUID) -> DebugEventStatus {
         events.first { $0.id == id }?.status ?? .unknown
     }
-
-    private static func events(in snapshot: DavyDebugSnapshot) -> [DebugEventItem] {
-        let sent = snapshot.sent.map { sentEvent in
-            DebugEventItem(event: sentEvent.event, status: .sent(at: sentEvent.sentAt, outcome: sentEvent.outcome))
-        }
-        let sentIDs = Set(sent.map(\.id))
-        let pending = snapshot.pending
-            .filter { !sentIDs.contains($0.id) }
-            .map { DebugEventItem(event: $0, status: .pending) }
-        return (sent + pending).sorted { $0.event.timestamp > $1.event.timestamp }
-    }
 }
 
 private struct DebugEventsScreen: View {
     let telemetry: Davy
     @State private var model = DebugEventsModel()
     @State private var selection = DebugPage.overview
+    // Kept here so they last while switching between pages.
+    @State private var searchText = ""
+    @State private var filter = DebugEventFilter.all
 
     var body: some View {
         Group {
@@ -154,7 +208,12 @@ private struct DebugEventsScreen: View {
             case .overview:
                 DebugOverview(model: model, sessionID: telemetry.sessionID)
             case .events:
-                DebugEventsList(model: model, sentHistoryLimit: telemetry.configuration.debugHistoryLimit)
+                DebugEventsList(
+                    model: model,
+                    sentHistoryLimit: telemetry.configuration.debugHistoryLimit,
+                    searchText: $searchText,
+                    filter: $filter
+                )
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -518,28 +577,49 @@ private struct DebugFailureDetail: View {
     }
 }
 
-/// Pending and sent events together, most recently logged first.
+/// Pending and sent events together, most recently logged first, narrowed by a search and a
+/// filter.
 private struct DebugEventsList: View {
     let model: DebugEventsModel
     let sentHistoryLimit: Int
+    @Binding var searchText: String
+    @Binding var filter: DebugEventFilter
 
     var body: some View {
+        let events = model.events.filter { filter.includes($0) && $0.matches(searchText: searchText) }
         List {
             if let lastFailure = model.lastFailure {
                 DebugFailureSection(failure: lastFailure)
             }
+            if !model.events.isEmpty {
+                Section {
+                    Picker(selection: $filter) {
+                        ForEach(DebugEventFilter.allCases) { filter in
+                            Text(verbatim: filter.title)
+                                .tag(filter)
+                        }
+                    } label: {
+                        Text(verbatim: "Show")
+                    }
+                } footer: {
+                    if events.count != model.events.count {
+                        Text(verbatim: "Showing \(events.count) of \(model.events.count) events.")
+                    }
+                }
+            }
             Section {
-                ForEach(model.events) { item in
+                ForEach(events) { item in
                     NavigationLink(value: item.event) {
                         DebugEventRow(event: item.event, status: item.status)
                     }
                 }
             } footer: {
-                if !model.events.isEmpty {
+                if !events.isEmpty {
                     DebugSentHistoryNote(limit: sentHistoryLimit)
                 }
             }
         }
+        .searchable(text: $searchText, prompt: Text(verbatim: "Name, info, or ID"))
         .overlay {
             if !model.isLoaded {
                 ProgressView()
@@ -556,6 +636,16 @@ private struct DebugEventsList: View {
                     } else {
                         Text(verbatim: "Logged events are listed here until they're sent.")
                     }
+                }
+            } else if events.isEmpty && !model.events.isEmpty {
+                ContentUnavailableView {
+                    Label {
+                        Text(verbatim: "No Matching Events")
+                    } icon: {
+                        Image(systemName: "magnifyingglass")
+                    }
+                } description: {
+                    Text(verbatim: "No events match the search and filter.")
                 }
             }
         }

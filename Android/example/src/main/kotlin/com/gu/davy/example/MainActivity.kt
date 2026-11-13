@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.widget.Button
 import android.widget.Switch
 import android.widget.TextView
+import com.gu.davy.DavyDebugActivity
 import com.gu.davy.Event
 
 class MainActivity : Activity() {
@@ -28,6 +29,9 @@ class MainActivity : Activity() {
         }
         findViewById<Button>(R.id.flush).setOnClickListener {
             telemetry.flush()
+        }
+        findViewById<Button>(R.id.debug_events).setOnClickListener {
+            DavyDebugActivity.start(this, telemetry)
         }
 
         if (savedInstanceState == null) {
