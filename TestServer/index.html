@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Davy test server</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    color-scheme: light dark;
+    --background: #ffffff;
+    --foreground: #1d1d1f;
+    --secondary: #6e6e73;
+    --separator: #d2d2d7;
+    --fill: #f5f5f7;
+    --selected: #e8f0fe;
+    --green: #1a7f37;
+    --red: #cf222e;
+    --orange: #9a6700;
+    --blue: #0969da;
+    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: #1c1c1e;
+      --foreground: #f5f5f7;
+      --secondary: #98989d;
+      --separator: #38383a;
+      --fill: #2c2c2e;
+      --selected: #1f3a5f;
+      --green: #3fb950;
+      --red: #f85149;
+      --orange: #d29922;
+      --blue: #58a6ff;
+    }
+  }
+  body { margin: 0; background: var(--background); color: var(--foreground); }
+  code, .mono, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  header {
+    position: sticky; top: 0; z-index: 1; display: grid; gap: 10px; padding: 12px 20px;
+    background: var(--background); border-bottom: 1px solid var(--separator);
+  }
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+  h1 { margin: 0; font-size: 17px; }
+  input, select, button {
+    font: inherit; color: inherit; padding: 4px 8px;
+    background: var(--fill); border: 1px solid var(--separator); border-radius: 6px;
+  }
+  button { cursor: pointer; }
+  select.failing { border-color: var(--red); color: var(--red); }
+  #filter { flex: 1; min-width: 200px; }
+  a { color: var(--blue); }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-weight: 600; color: var(--secondary); }
+  th, td { padding: 6px 8px; border-bottom: 1px solid var(--separator); vertical-align: top; }
+  tr.event { cursor: pointer; }
+  tr.event:hover { background: var(--fill); }
+  tr.event.open { background: var(--selected); }
+  tr.details > td { background: var(--fill); padding: 4px 20px 12px; }
+  h3 { margin: 10px 0 4px; font-size: 11px; color: var(--secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+  pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
+  .badge { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 11px; font-weight: 600; color: #fff; background: var(--secondary); }
+  .badge.breadcrumb { background: var(--blue); }
+  .badge.error, .badge.bad { color: #fff; background: var(--red); }
+  .badge.ok { color: #fff; background: var(--green); }
+  .badge.warn { color: #fff; background: var(--orange); }
+  .info span { display: inline-block; margin-right: 10px; }
+  td.session { min-width: 240px; }
+  td.request { white-space: nowrap; }
+  .muted { color: var(--secondary); }
+  .ok { color: var(--green); }
+  .bad { color: var(--red); }
+  .problems { margin: 0; padding-left: 20px; color: var(--red); }
+  #empty { padding: 40px 20px; text-align: center; color: var(--secondary); }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1>Davy test server</h1>
+    <span id="connection" class="muted">Connecting…</span>
+    <span class="muted">Endpoint <code id="endpoint"></code>. On Android, run <code id="adb-reverse"></code> first and use <code id="android-endpoint"></code>.</span>
+  </div>
+  <div class="bar">
+    <label>Respond with
+      <select id="status">
+        <option value="204">204: store the events</option>
+        <option value="400">400: reject the events</option>
+        <option value="429">429: throttle</option>
+        <option value="503">503: pause</option>
+        <option value="500">500: fail, so clients retry</option>
+      </select>
+    </label>
+    <label id="retry-after-field">Retry-After <input id="retry-after" size="8" value="30" placeholder="seconds"></label>
+    <input id="filter" type="search" placeholder="Filter by name, type, info, or session">
+    <label><input id="problems-only" type="checkbox"> Only problems</label>
+    <span id="summary" class="muted"></span>
+    <a href="/_/requests" download="davy-requests.json">Download JSON</a>
+    <button id="clear">Clear</button>
+  </div>
+</header>
+<main>
+  <table>
+    <thead>
+      <tr><th>Received</th><th>Type</th><th>Name</th><th>Info</th><th>Session</th><th>Request</th><th>Spec</th></tr>
+    </thead>
+    <tbody id="events"></tbody>
+  </table>
+  <p id="empty"></p>
+</main>
+<script>
+  const MAX_ROWS = 1000;
+  const MAX_REQUESTS = 10000;
+  const state = { generation: "", after: 0, requests: [], open: new Set() };
+  const $ = (id) => document.getElementById(id);
+
+  function element(tag, attributes = {}, ...children) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(attributes)) {
+      if (key === "class") node.className = value;
+      else node.setAttribute(key, value);
+    }
+    for (const child of children.flat()) {
+      if (child !== null && child !== undefined && child !== false) node.append(child);
+    }
+    return node;
+  }
+
+  const text = (value) => (typeof value === "string" ? value : JSON.stringify(value));
+
+  function time(iso) {
+    const date = new Date(iso);
+    const clock = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+    return `${clock}.${String(date.getMilliseconds()).padStart(3, "0")}`;
+  }
+
+  function typeBadge(type) {
+    if (type === undefined) return element("span", { class: "muted" }, "—");
+    return element("span", { class: `badge ${type === "breadcrumb" || type === "error" ? type : ""}` }, text(type));
+  }
+
+  function statusBadge(status) {
+    const kind = status >= 200 && status < 300 ? "ok" : status === 429 || status === 503 ? "warn" : "bad";
+    return element("span", { class: `badge ${kind}` }, String(status));
+  }
+
+  function infoList(info) {
+    if (info === undefined) return null;
+    if (typeof info !== "object" || info === null || Array.isArray(info)) return text(info);
+    return Object.entries(info).map(([key, value]) => element("span", {}, element("span", { class: "muted" }, `${key} `), text(value)));
+  }
+
+  function sessionSummary(session) {
+    if (!session) return element("span", { class: "muted" }, "—");
+    const join = (...parts) => parts.filter((part) => part !== undefined && part !== "").map(text).join(" · ");
+    const app = session.appVersion !== undefined ? `${text(session.appVersion)}${session.build !== undefined ? ` (${text(session.build)})` : ""}` : undefined;
+    return element("div", { title: `Session ${text(session.id)}` },
+      element("div", {}, join([session.os, session.osVersion].filter((part) => part !== undefined).map(text).join(" "), app, session.environment)),
+      element("div", { class: "muted" }, join(session.deviceModel, session.locale, typeof session.id === "string" ? session.id.slice(0, 8) : session.id)),
+    );
+  }
+
+  function clockSummary(request) {
+    const offset = Date.parse(request.receivedAt) - Date.parse(request.sentAt);
+    const direction = offset > 0 ? "behind" : "ahead of";
+    return [
+      `Sent at (device): ${request.sentAt}`,
+      `Received at (server): ${request.receivedAt}`,
+      Number.isNaN(offset) ? "" : `The device's clock is about ${(Math.abs(offset) / 1000).toFixed(1)} s ${offset === 0 ? "in step with" : direction} the server's`,
+    ].filter(Boolean).join("\n");
+  }
+
+  function formatLabel(request) {
+    if (request.format === "json") return `JSON, ${request.events.length} event${request.events.length === 1 ? "" : "s"}`;
+    return `Query ${request.method}`;
+  }
+
+  // One row per event, newest first, and one for each request without any events.
+  function rows() {
+    const result = [];
+    for (let r = state.requests.length - 1; r >= 0; r--) {
+      const request = state.requests[r];
+      if (request.events.length === 0) result.push({ key: `${request.seq}`, request, event: undefined });
+      for (let e = request.events.length - 1; e >= 0; e--) {
+        result.push({ key: `${request.seq}:${e}`, request, event: request.events[e] });
+      }
+    }
+    return result;
+  }
+
+  function matches({ request, event }, terms) {
+    if ($("problems-only").checked && request.problems.length === 0) return false;
+    const values = [formatLabel(request), String(request.response.status), ...request.problems];
+    if (event) values.push(event.id, event.type, event.name, ...Object.entries(event.info ?? {}).flat());
+    if (request.session) values.push(...Object.values(request.session));
+    const haystack = values.map(text).join("\n").toLowerCase();
+    return terms.every((term) => haystack.includes(term));
+  }
+
+  function eventRow(row) {
+    const { key, request, event } = row;
+    const node = element("tr", { class: `event${state.open.has(key) ? " open" : ""}` },
+      element("td", { class: "mono", title: request.receivedAt }, time(request.receivedAt)),
+      element("td", {}, typeBadge(event?.type)),
+      element("td", { class: "mono" },
+        event ? text(event.name ?? "") : element("span", { class: "bad" }, "No events"),
+        event?.duplicate ? [" ", element("span", { class: "badge warn", title: "An event with this ID was already stored" }, "duplicate")] : null,
+      ),
+      element("td", { class: "info mono" }, infoList(event?.info)),
+      element("td", { class: "session" }, sessionSummary(request.session)),
+      element("td", { class: "request" }, formatLabel(request), " ", statusBadge(request.response.status)),
+      element("td", {}, request.problems.length
+        ? element("span", { class: "bad", title: request.problems.join("\n") }, `✗ ${request.problems.length}`)
+        : element("span", { class: "ok", title: "Matches the spec" }, "✓")),
+    );
+    node.addEventListener("click", () => {
+      if (!state.open.delete(key)) state.open.add(key);
+      render();
+    });
+    return node;
+  }
+
+  function detailsRow({ request, event }) {
+    const section = (title, ...content) => [element("h3", {}, title), ...content];
+    const pretty = (value) => element("pre", {}, JSON.stringify(value, null, 2));
+    let body = request.body;
+    try { body = JSON.stringify(JSON.parse(body), null, 2); } catch {}
+    const response = [`${request.response.status}`, request.response.retryAfter && `Retry-After: ${request.response.retryAfter}`];
+    const cell = element("td", { colspan: "7" },
+      request.problems.length ? section("Problems", element("ul", { class: "problems" }, request.problems.map((problem) => element("li", {}, problem)))) : null,
+      event ? section("Event", pretty(Object.fromEntries(Object.entries(event).filter(([key]) => key !== "duplicate")))) : null,
+      request.session ? section("Session", pretty(request.session)) : null,
+      request.sentAt ? section("Clock", element("pre", {}, clockSummary(request))) : null,
+      request.endpointQuery.length ? section("Query items already in the endpoint", pretty(Object.fromEntries(request.endpointQuery))) : null,
+      section("Request", element("pre", {}, [
+        `${request.method} ${request.target}`,
+        ...request.headers.map(([name, value]) => `${name}: ${value}`),
+        ...(body ? ["", body] : []),
+      ].join("\n"))),
+      section("Response", element("pre", {}, response.filter(Boolean).join("\n"))),
+    );
+    return element("tr", { class: "details" }, cell);
+  }
+
+  function render() {
+    const terms = $("filter").value.toLowerCase().split(/\s+/).filter(Boolean);
+    const all = rows();
+    const visible = all.filter((row) => matches(row, terms));
+    $("events").replaceChildren(...visible.slice(0, MAX_ROWS).flatMap((row) =>
+      state.open.has(row.key) ? [eventRow(row), detailsRow(row)] : [eventRow(row)]));
+
+    const problems = state.requests.filter((request) => request.problems.length).length;
+    const duplicates = state.requests.flatMap((request) => request.events).filter((event) => event.duplicate).length;
+    $("summary").textContent = [
+      `${state.requests.length} requests`,
+      `${state.requests.reduce((count, request) => count + request.events.length, 0)} events`,
+      problems && `${problems} with problems`,
+      duplicates && `${duplicates} duplicates`,
+      visible.length > MAX_ROWS && `showing the newest ${MAX_ROWS}`,
+    ].filter(Boolean).join(" · ");
+    $("empty").hidden = visible.length > 0;
+    $("empty").textContent = all.length
+      ? "No events match the filter."
+      : "No events yet. Set a Davy client's endpoint to the URL above, then log some events.";
+  }
+
+  function showRetryAfter() {
+    const status = Number($("status").value);
+    $("retry-after-field").hidden = status !== 429 && status !== 503;
+    $("status").classList.toggle("failing", status < 200 || status >= 300);
+  }
+
+  function showResponse(response) {
+    // Don't overwrite a change the user is making.
+    if (document.activeElement === $("status") || document.activeElement === $("retry-after")) return;
+    const value = String(response.status);
+    if (![...$("status").options].some((option) => option.value === value)) {
+      $("status").append(element("option", { value }, value));
+    }
+    $("status").value = value;
+    if (response.retryAfter) $("retry-after").value = response.retryAfter;
+    showRetryAfter();
+  }
+
+  async function applyResponse() {
+    showRetryAfter();
+    const status = Number($("status").value);
+    const retryAfter = status === 429 || status === 503 ? $("retry-after").value.trim() || null : null;
+    await fetch("/_/response", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, retryAfter }),
+    });
+  }
+
+  async function poll() {
+    try {
+      const query = new URLSearchParams({ after: state.after, generation: state.generation });
+      const snapshot = await (await fetch(`/_/requests?${query}`, { cache: "no-store" })).json();
+      if (snapshot.reset) {
+        state.requests = [];
+        state.open.clear();
+      }
+      state.generation = snapshot.generation;
+      if (snapshot.reset || snapshot.requests.length) {
+        state.requests.push(...snapshot.requests);
+        state.requests.splice(0, Math.max(0, state.requests.length - MAX_REQUESTS));
+        state.after = state.requests.at(-1)?.seq ?? 0;
+        render();
+      }
+      showResponse(snapshot.response);
+      $("connection").textContent = "● Live";
+      $("connection").className = "ok";
+    } catch {
+      $("connection").textContent = "● Can't reach the server";
+      $("connection").className = "bad";
+    }
+    setTimeout(poll, 1000);
+  }
+
+  const port = location.port || 80;
+  $("endpoint").textContent = `${location.origin}/events`;
+  $("adb-reverse").textContent = `adb reverse tcp:${port} tcp:${port}`;
+  $("android-endpoint").textContent = `http://localhost:${port}/events`;
+  $("status").addEventListener("change", applyResponse);
+  $("retry-after").addEventListener("change", applyResponse);
+  $("filter").addEventListener("input", render);
+  $("problems-only").addEventListener("change", render);
+  $("clear").addEventListener("click", async () => {
+    await fetch("/_/requests", { method: "DELETE" });
+    Object.assign(state, { generation: "", after: 0, requests: [] });
+    state.open.clear();
+    render();
+  });
+  render();
+  poll();
+</script>
+</body>
+</html>

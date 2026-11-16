@@ -1,0 +1,9 @@
+# From this folder: `docker compose up --build`, then open http://localhost:8080.
+services:
+  davy-test-server:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      # The server checks requests against the repository's current spec.
+      - ../Spec:/app/Spec:ro
