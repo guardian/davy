@@ -139,11 +139,11 @@ val telemetry = Davy(context, DavyConfiguration(
 
 ## Event size
 
-Each event must fit in `maxEventSize` bytes (default 2,048), measured as the length of its [query string](backend.md#query-string) URL, including the endpoint, session data, and an error's diagnostics. 2,048 bytes is within the default URL limits of common servers, proxies, and CDNs. The limit applies to both request formats, so any event can be sent as a URL, and one large event can't make a whole JSON batch too large for the server to accept.
+Each event must fit in `maxEventSize` bytes (default 2,048), measured as the length of its [query string](backend.md#query-string) URL, including the endpoint, session data, and an error's diagnostics. 2,048 bytes is within the default URL limits of common servers, proxies, and CDNs. The limit applies to every request format, so any event can be sent as a URL, and one large event can't make a whole JSON batch too large for the server to accept.
 
 An event over the limit is replaced with the error `davy_event_too_large`, with `info` `{ "rejected_name": "checkout_started", "size": "2391" }`, and an error is logged to the console. The original event's `info` isn't sent, but an error's diagnostics are. If the replacement is also too large, for example because the name is very long, nothing is sent.
 
-The session data, IDs, timestamp, and a short endpoint take about 300 bytes, leaving roughly 1,700 for the name and `info`. An error's diagnostics take about 190 more. `info` is sent as percent-encoded JSON, so each entry takes about 20 bytes plus its key and value, and each non-ASCII character takes 6 to 12 bytes. Raise `maxEventSize` only if everything between the app and your endpoint accepts longer URLs.
+The session data, IDs, timestamps, and a short endpoint take about 340 bytes, leaving roughly 1,700 for the name and `info`. An error's diagnostics take about 190 more. `info` is sent as percent-encoded JSON, so each entry takes about 20 bytes plus its key and value, and each non-ASCII character takes 6 to 12 bytes. Raise `maxEventSize` only if everything between the app and your endpoint accepts longer URLs.
 
 ## Foreground and background
 

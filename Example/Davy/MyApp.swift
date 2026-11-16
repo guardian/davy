@@ -31,8 +31,10 @@ private let DavyConfig = DavyConfiguration(
         #endif
     }(),
     // POST batches here as `{ "session": { … }, "events": [ … ] }` (the default). Use
-    // `.queryString(method:maxConcurrentRequests:)` instead to send each event as its own request
-    // to `<endpoint>/<name>?eventId=…&type=…&sessionId=…`, for servers that log URLs, not bodies.
+    // `.jsonEvent(maxConcurrentRequests:)` to send each event as its own request here, with the
+    // same body containing just that event. Use `.queryString(method:maxConcurrentRequests:)` to
+    // send each event as its own request to `<endpoint>/<name>?eventId=…&type=…&sessionId=…`, for
+    // servers that log URLs, not bodies.
     format: .jsonBatch,
     // Lets you separate test data from real usage. TestFlight and App Store builds share a binary,
     // so a "beta" value needs a runtime check or a separate build configuration.

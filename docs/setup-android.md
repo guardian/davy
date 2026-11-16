@@ -76,4 +76,4 @@ Or use `DavyDebugActivity.intent(context, telemetry)` to start it some other way
 
 To run it, open the `Android` folder in Android Studio, choose the **example** run configuration and a device, and click **Run**. Or, from the command line, run `./gradlew :example:installDebug` in the `Android` folder.
 
-Its endpoint is a placeholder, so requests fail and events stay pending, which shows how failures and retries appear in the debug screen. Watch them in Logcat with the `Davy` tag. Replace it with your own endpoint to see events arrive.
+Debug builds send events to the [test server](development.md#trying-the-clients-against-a-server) at `http://localhost:8080/events`. To see events arrive, start the server, then run `adb reverse tcp:8080 tcp:8080` so the emulator or device reaches it at `localhost`. Debug builds allow plain HTTP to `localhost` only. Without the server, requests fail and events stay pending, which shows how failures and retries appear in the debug screen. Watch them in Logcat with the `Davy` tag. Release builds use a placeholder endpoint; replace it with your own.

@@ -10,12 +10,12 @@ Delivery works the same way on every platform.
 - On launch, for any events left over from a previous session.
 - When `flush()` or `flushAndWait()` is called.
 
-The debounce timer restarts with every event, so in a busy session events can wait until `batchSize` are pending or the app moves to the background. Lower `debounceInterval` and `batchSize` if you need events sooner.
+The debounce timer restarts with every event, so in a busy session events can wait until `batchSize` are pending or the app moves to the background. Lower `debounceInterval` and `batchSize` if you need events sooner; with a `batchSize` of 1, each event is sent as soon as it's logged.
 
 ## Delivery guarantees
 
 - Every event is written to disk before it's sent, so events survive crashes, relaunches, and offline use.
-- Events are sent oldest first. JSON batches are sent one request at a time. The query string format sends up to `maxConcurrentRequests` at once, so events can arrive out of order; use `timestamp` to order them.
+- Events are sent oldest first. JSON batches are sent one request at a time. The JSON event and query string formats send up to `maxConcurrentRequests` at once, so events can arrive out of order; use `timestamp` to order them.
 - Events are removed only once the server accepts or permanently rejects them. Network errors and other responses keep them for a retry.
 - Delivery is at least once. If a response is lost, for example because the app quits or the connection drops after the server stored the events, they're sent again with the same IDs.
 - Breadcrumbs and errors share one queue, so they're stored, retried, and expired together and keep their relative order.

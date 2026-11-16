@@ -2,7 +2,7 @@
 
 Davy is only the client. You run the endpoint, and what's behind it is up to you: a small web service that writes to a database, a serverless function, or a CDN that logs each request straight to a data warehouse. Only the endpoint URL is built into your app, so you can change everything behind it without an app update.
 
-Every platform sends exactly the same requests, defined in an OpenAPI 3.1 document, [`Spec/openapi.yaml`](../Spec/openapi.yaml). Both clients' tests check their requests against it. Use it to check what your endpoint receives, generate server code, or browse the formats in any OpenAPI viewer.
+Every platform sends exactly the same requests, defined in an OpenAPI 3.1 document, [`Spec/openapi.yaml`](../Spec/openapi.yaml). Both clients' tests check their requests against it. Use it to check what your endpoint receives, generate server code, or browse the formats in any OpenAPI viewer. To see real requests from your app before your endpoint is ready, send them to the [test server](development.md#trying-the-clients-against-a-server).
 
 Your endpoint should:
 
@@ -12,7 +12,7 @@ Your endpoint should:
 4. **Respond with 400, 413, 414, 422, or 431** to requests it will never accept, so their events are discarded instead of retried.
 5. **Respond with 429 or 503 and `Retry-After`** to slow down or pause clients, for example during an incident or a cost spike.
 6. **Expect late events.** Devices send events when they come back online, up to `maxEventAge` (default 30 days) after they were logged, so the most recent minutes of data are always incomplete. Allow for this in dashboards and alerts.
-7. **Record when it received each request**, if you need a trusted time. `timestamp` comes from the device's clock, which can be wrong.
+7. **Record when it received each request**, if you need a trusted time. `timestamp` and `sentAt` come from the device's clock, which can be wrong. Comparing `sentAt` with when you received the request estimates how far off the clock is; see [Fixing clock differences](#fixing-clock-differences).
 8. **Treat the endpoint as public.** Anything built into an app, including an `Authorization` header, can be extracted from it, so validate what you receive. Ignore fields you don't recognize rather than rejecting them, since rejected events are discarded.
 9. **Not log IP addresses**, if you want to keep reports anonymous.
 
@@ -23,6 +23,7 @@ Set `format` to choose how events are encoded:
 | Format | Requests |
 | --- | --- |
 | JSON batch (default) | Up to `batchSize` events per `POST`, as a JSON body |
+| JSON event | One `POST` per event, with the same JSON body as a batch of one, up to 4 in flight by default |
 | Query string | One request per event with an empty body and every field in the URL; `POST` (default) or `GET`, up to 4 in flight by default |
 
 Every request includes the headers in `headers`. Requests never use cookies or the local cache.
@@ -33,6 +34,7 @@ A `POST` to the endpoint with `Content-Type: application/json`. Each request con
 
 ```json
 {
+  "sentAt": "2026-11-09T11:39:00.250Z",
   "session": {
     "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
     "environment": "production",
@@ -63,15 +65,31 @@ A `POST` to the endpoint with `Content-Type: application/json`. Each request con
 }
 ```
 
+### JSON event
+
+Like a JSON batch, but each request contains exactly one event, so the same endpoint handles both and switching between them needs no server changes:
+
+```json
+{
+  "sentAt": "2026-11-09T11:39:00.250Z",
+  "session": { "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF", "os": "iOS", "osVersion": "26.1.0" },
+  "events": [
+    { "id": "1B4E28BA-2FA1-11D2-883F-0016D3CCA427", "type": "breadcrumb", "name": "checkout_started", "timestamp": "2026-11-09T11:38:55.780Z" }
+  ]
+}
+```
+
+Use it if your server handles one event per request, or so that rejecting one event doesn't discard the others in its batch. Up to `maxConcurrentRequests` (default 4) requests are in flight at once.
+
 ### Query string
 
 For servers that can log fields from the URL but not from the body, such as a CDN logging requests straight to a data warehouse. The event's name is appended to the endpoint's path, and every other field is a query parameter, omitted if it has no value:
 
 ```
-POST https://api.example.com/events/payment_declined?eventId=9C5B94B1-…&type=error&timestamp=2026-11-09T11%3A38%3A57.112Z&sessionId=6F9619FF-…&environment=production&appVersion=1.2.0&build=45&os=Android&osVersion=15.0.0&deviceModel=Pixel%209&locale=en_GB&info=%7B%22cpu_percent%22%3A%2212%22%2C%22low_power_mode%22%3A%22false%22%2C%22memory_available_mb%22%3A%22190%22%2C%22memory_used_mb%22%3A%22143%22%2C%22reason%22%3A%22card_expired%22%2C%22thermal_state%22%3A%22none%22%7D
+POST https://api.example.com/events/payment_declined?eventId=9C5B94B1-…&type=error&timestamp=2026-11-09T11%3A38%3A57.112Z&sentAt=2026-11-09T11%3A39%3A00.250Z&sessionId=6F9619FF-…&environment=production&appVersion=1.2.0&build=45&os=Android&osVersion=15.0.0&deviceModel=Pixel%209&locale=en_GB&info=%7B%22cpu_percent%22%3A%2212%22%2C%22low_power_mode%22%3A%22false%22%2C%22memory_available_mb%22%3A%22190%22%2C%22memory_used_mb%22%3A%22143%22%2C%22reason%22%3A%22card_expired%22%2C%22thermal_state%22%3A%22none%22%7D
 ```
 
-- Parameters are `eventId`, `type`, `timestamp`, and `info` from the event, and `sessionId`, `environment`, `appVersion`, `build`, `os`, `osVersion`, `deviceModel`, and `locale` from the session, in that order.
+- Parameters are, in this order: `eventId`, `type`, `timestamp`, and `sentAt` from the event and request; `sessionId`, `environment`, `appVersion`, `build`, `os`, `osVersion`, `deviceModel`, and `locale` from the session; then the event's `info`.
 - `info` is a JSON object string with sorted keys.
 - Everything except `A–Z a–z 0–9 - . _ ~` is percent-encoded, including `+`, so values decode the same way on every server.
 - Query items already in the endpoint are kept.
@@ -102,6 +120,27 @@ The session ID is kept in memory and never reused, so it links events within a s
 | `name` | The name the event was logged with; part of the path in the query string format |
 | `info` | The event's details as strings, with [diagnostics](#diagnostics) added for errors; omitted if empty |
 | `timestamp` | When the event was logged, by the device's clock, as ISO 8601 in UTC with milliseconds |
+
+## Request fields
+
+Wire field names use camelCase, so the send time is `sentAt`, not `sent_at`.
+Like event timestamps, it is ISO 8601 in UTC with exactly three millisecond digits
+(including `.000Z` for whole seconds), but records the send time rather than the event time.
+
+| Field | Description |
+| --- | --- |
+| `sentAt` | When the request was sent, by the device's clock, in the same format as `timestamp`. Set again for every attempt, so a retry has a later `sentAt`; the same for every event in a request. A top-level field in the JSON formats, and a query parameter in the query string format |
+
+## Fixing clock differences
+
+A device's clock can be wrong, so `timestamp` can be minutes or even years out. `sentAt` is read from the same clock when the request is sent, so the difference between your server's time when it receives the request and `sentAt` is roughly how far the clock is off, plus the time the request took to arrive:
+
+```
+clockOffset = receivedAt − sentAt
+trustedTimestamp = timestamp + clockOffset
+```
+
+Store `sentAt` and `receivedAt` alongside each event and apply the correction when you query, rather than overwriting `timestamp`, so you can change your approach later. The estimate is rough for a request that took a long time to arrive, and only holds if the clock didn't change between logging the event and sending it.
 
 ## Diagnostics
 

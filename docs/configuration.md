@@ -5,17 +5,19 @@ Only `endpoint` is required. The options have the same names on every platform; 
 | Option | Default | Description |
 | --- | --- | --- |
 | `endpoint` | None | The URL that events are sent to |
-| `format` | `.jsonBatch` / `RequestFormat.JsonBatch` | How events are encoded into requests: JSON batches, or one request per event with every field in the URL; see [Request formats](backend.md#request-formats) |
+| `format` | `.jsonBatch` / `RequestFormat.JsonBatch` | How events are encoded into requests: JSON batches, one JSON request per event, or one request per event with every field in the URL; see [Request formats](backend.md#request-formats) |
 | `environment` | `nil` / `null` | The kind of build, for example `debug`, `beta`, or `production`, sent as the session's `environment` to keep test data apart from real usage |
 | `onInvalidEventName` | `.send` / `SEND` | What to do with event names that aren't lower snake case; see [Consistent event names](logging-events.md#consistent-event-names) |
 | `maxEventSize` | `2048` | The largest event in bytes, measured as its query string URL; larger events are replaced with an error; see [Event size](logging-events.md#event-size) |
 | `logsAppLifecycleEvents` | `false` | Log `app_foregrounded` and `app_backgrounded` breadcrumbs; see [Foreground and background](logging-events.md#foreground-and-background) |
 | `headers` | Empty | Extra HTTP header fields for every request, for example `Authorization` |
-| `batchSize` | `100` | The number of pending events that triggers a send; with JSON batches, also the most events in one request |
+| `batchSize` | `100` | The number of pending events that triggers a send; with JSON batches, also the most events in one request. Set it to `1` to send each event as soon as it's logged |
 | `debounceInterval` | 10 seconds | How long to wait after the most recent event before sending a partial batch |
 | `maxEventAge` | 30 days | How old unsent events can get before they're discarded |
 | `storageDirectory` | A platform default | Where pending events are stored; see [iOS and macOS](setup-apple.md#how-it-behaves-on-apple-platforms) and [Android](setup-android.md#how-it-behaves-on-android). Use a separate directory for each instance |
-| `debugHistoryLimit` | `200` | How many sent events to keep in memory for the debug screen and snapshots; `0` keeps none; see [Debugging events](debugging.md) |
+| `debugHistoryLimit` | `200` | How many sent events, and how many requests, to keep in memory for the debug screen and snapshots; `0` keeps none; see [Debugging events](debugging.md) |
+
+The JSON event format, `.jsonEvent(maxConcurrentRequests:)` / `RequestFormat.JsonEvent(maxConcurrentRequests)`, has one setting of its own: `maxConcurrentRequests`, how many requests can be in flight at once (default 4).
 
 The query string format has two settings of its own: the HTTP `method`, `POST` (default) or `GET`, and `maxConcurrentRequests`, how many requests can be in flight at once (default 4).
 

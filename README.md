@@ -23,7 +23,7 @@ Davy is built for big-picture reporting: how often something happens, which erro
 - **Your server stays in control.** It can pause every client with `Retry-After`, and remove duplicates by event ID.
 - **Privacy-minded.** No user, device, or advertising identifiers, and a new random session ID every launch.
 - **The same requests on every platform.** Both clients are tested against one [OpenAPI spec](Spec/openapi.yaml) and shared [fixtures](Spec/fixtures.json), so you can query events from every platform together.
-- **A debug screen** that lists pending and sent events during development.
+- **A debug screen** that lists pending and sent events, and the requests they were sent in, during development.
 - **No dependencies.**
 
 ## Getting started
@@ -80,7 +80,7 @@ telemetry.log(Event.Breadcrumb("payment_selected", mapOf("payment_method" to "go
 telemetry.log(Event.Error("payment_declined", mapOf("reason" to "card_expired")))
 ```
 
-Davy sends events in the background, in batches. Log a breadcrumb such as `app_launched` at launch, so you can count sessions and turn raw counts into rates. Use short, stable names, the same on every platform, and **never include personal data** in names or `info`.
+Davy sends events in the background, in batches by default, or one request per event if you set `format`; see [Request formats](docs/backend.md#request-formats). Log a breadcrumb such as `app_launched` at launch, so you can count sessions and turn raw counts into rates. Use short, stable names, the same on every platform, and **never include personal data** in names or `info`.
 
 ## Documentation
 

@@ -133,4 +133,4 @@ Or present `DavyDebugView(telemetry: telemetry)` yourself. It has its own `Navig
 
 `Example/Davy Example.xcodeproj` is a SwiftUI app that owns one instance, passes it through the environment, logs events from the UI, and presents the debug view. Its configuration sets every option, with a comment explaining each one.
 
-Its endpoint is a placeholder, so requests fail and events stay pending, which shows how failures and retries appear in the debug view. Replace it with your own endpoint to see events arrive.
+Debug builds send events to the [test server](development.md#trying-the-clients-against-a-server) at `http://localhost:8080/events`, so start it to see events arrive. On a device, replace `localhost` with your Mac's IP address. Without the server, requests fail and events stay pending, which shows how failures and retries appear in the debug view. Release builds use a placeholder endpoint; replace it with your own.
