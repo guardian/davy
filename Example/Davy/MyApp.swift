@@ -20,8 +20,16 @@ import Davy
 /// Where and how events are delivered. Only `endpoint` is required; every other parameter is
 /// spelled out here to show what can be configured.
 private let DavyConfig = DavyConfiguration(
-    // Replace with your own endpoint.
-    endpoint: URL(string: "https://api.example.com/events")!,
+    // Debug builds send to the test server in `TestServer/`, running on this Mac; see
+    // docs/development.md. On a device, replace `localhost` with the Mac's IP address.
+    endpoint: {
+        #if DEBUG
+        URL(string: "http://localhost:8080/events")!
+        #else
+        // Replace with your own endpoint.
+        URL(string: "https://api.example.com/events")!
+        #endif
+    }(),
     // POST batches here as `{ "session": { … }, "events": [ … ] }` (the default). Use
     // `.queryString(method:maxConcurrentRequests:)` instead to send each event as its own request
     // to `<endpoint>/<name>?eventId=…&type=…&sessionId=…`, for servers that log URLs, not bodies.

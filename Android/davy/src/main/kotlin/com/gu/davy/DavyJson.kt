@@ -1,7 +1,9 @@
 package com.gu.davy
 
+import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
+import org.json.JSONTokener
 import java.text.ParseException
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -33,9 +35,11 @@ internal object DavyJson {
     /** UUIDs in uppercase, as Apple platforms write them. */
     fun uuid(id: UUID): String = id.toString().uppercase(Locale.ROOT)
 
-    /** The JSON batch request body: `{ "session": { … }, "events": [ … ] }`. */
-    fun payload(session: Session, events: List<EventRecord>): String = buildString {
-        append("{\"session\":")
+    /** The JSON batch request body: `{ "sentAt": "…", "session": { … }, "events": [ … ] }`. */
+    fun payload(session: Session, events: List<EventRecord>, sentAtMillis: Long): String = buildString {
+        append("{\"sentAt\":")
+        appendString(timestamp(sentAtMillis))
+        append(",\"session\":")
         appendSession(session)
         append(",\"events\":[")
         events.forEachIndexed { index, event ->
@@ -180,6 +184,56 @@ internal object DavyJson {
             appendPretty(field!!, "$indent  ")
         }
         append('\n').append(indent).append('}')
+    }
+
+    /**
+     * [json], an object or array, indented with sorted keys like [prettyPendingEvent], for showing
+     * request bodies in [DavyDebugActivity]. `null` if it isn't valid JSON.
+     */
+    fun prettyJson(json: String): String? {
+        val tokener = JSONTokener(json)
+        val value = try {
+            tokener.nextValue().takeIf { tokener.nextClean() == '\u0000' }
+        } catch (_: JSONException) {
+            null
+        }
+        if (value !is JSONObject && value !is JSONArray) return null
+        return buildString { appendPrettyJson(value, indent = "") }
+    }
+
+    private fun StringBuilder.appendPrettyJson(value: Any?, indent: String) {
+        when (value) {
+            is JSONObject -> {
+                val keys = value.keys().asSequence().sorted().toList()
+                if (keys.isEmpty()) {
+                    append("{}")
+                    return
+                }
+                append('{')
+                keys.forEachIndexed { index, key ->
+                    append(if (index == 0) "\n" else ",\n").append(indent).append("  ")
+                    appendString(key)
+                    append(" : ")
+                    appendPrettyJson(value.opt(key), "$indent  ")
+                }
+                append('\n').append(indent).append('}')
+            }
+            is JSONArray -> {
+                if (value.length() == 0) {
+                    append("[]")
+                    return
+                }
+                append('[')
+                for (index in 0 until value.length()) {
+                    append(if (index == 0) "\n" else ",\n").append(indent).append("  ")
+                    appendPrettyJson(value.opt(index), "$indent  ")
+                }
+                append('\n').append(indent).append(']')
+            }
+            is String -> appendString(value)
+            null, JSONObject.NULL -> append("null")
+            else -> append(value.toString())
+        }
     }
 
     private fun StringBuilder.appendString(value: String) {

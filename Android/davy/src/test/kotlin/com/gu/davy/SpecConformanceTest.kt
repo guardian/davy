@@ -22,15 +22,17 @@ class SpecConformanceTest {
 
     private val formats = listOf(
         RequestFormat.JsonBatch,
+        RequestFormat.JsonEvent(),
         RequestFormat.QueryString(HttpMethod.POST),
         RequestFormat.QueryString(HttpMethod.GET),
     )
 
     private fun requests(format: RequestFormat, session: Session, events: List<EventRecord>): List<HttpRequest> {
         val builder = RequestBuilder(DavyConfiguration(endpoint, format))
+        val sentAt = System.currentTimeMillis()
         return when (format) {
-            RequestFormat.JsonBatch -> listOf(builder.request(session, events))
-            is RequestFormat.QueryString -> events.map { builder.request(session, listOf(it)) }
+            RequestFormat.JsonBatch -> listOf(builder.request(session, events, sentAt))
+            is RequestFormat.JsonEvent, is RequestFormat.QueryString -> events.map { builder.request(session, listOf(it), sentAt) }
         }
     }
 
@@ -109,12 +111,17 @@ class SpecConformanceTest {
             val fixture = fixtures.getJSONObject(index)
             val name = fixture.getString("name")
             val format = fixture.getJSONObject("format").let {
-                if (it.getString("type") == "jsonBatch") RequestFormat.JsonBatch else RequestFormat.QueryString(HttpMethod.valueOf(it.getString("method")))
+                when (val type = it.getString("type")) {
+                    "jsonBatch" -> RequestFormat.JsonBatch
+                    "jsonEvent" -> RequestFormat.JsonEvent()
+                    "queryString" -> RequestFormat.QueryString(HttpMethod.valueOf(it.getString("method")))
+                    else -> throw AssertionError("$name: unknown format $type")
+                }
             }
             val session = DavyJson.parseSession(fixture.getJSONObject("session"))
             val events = fixture.getJSONArray("events").objects().map(DavyJson::parseEvent)
             val builder = RequestBuilder(URI(fixture.getString("endpoint")), fixture.getJSONObject("headers").strings(), format)
-            val request = builder.request(session, events)
+            val request = builder.request(session, events, DavyJson.parseTimestamp(fixture.getString("sentAt")))
             val expected = fixture.getJSONObject("expected")
 
             assertEquals(name, expected.getString("method"), request.method)
@@ -127,6 +134,33 @@ class SpecConformanceTest {
             assertEquals(name, expected.opt("body")?.let(Json::of), request.body?.let { Json.parse(it.decodeToString()) })
             if (format is RequestFormat.QueryString) {
                 assertEquals(name, expected.getString("url").toByteArray().size, builder.size(events.single(), session))
+            }
+        }
+    }
+
+    @Test
+    fun sendTimesUseTheEventTimestampFormatWithoutReplacingEventTimes() {
+        val timestamp = "2023-11-14T22:13:20.000Z"
+        val event = EventRecord.from(Event.Breadcrumb("checkout_started"), timestampMillis = DavyJson.parseTimestamp(timestamp))
+        val session = Session(UUID.randomUUID(), null, null, null, Session.OS, "15.0.0", null, null)
+
+        for (format in formats) {
+            val builder = RequestBuilder(DavyConfiguration(endpoint, format))
+            for (sentAt in listOf("2023-11-14T22:13:25.000Z", "2023-11-14T22:13:25.007Z")) {
+                val request = builder.request(session, listOf(event), DavyJson.parseTimestamp(sentAt))
+                val body = request.body
+                if (body != null) {
+                    val payload = JSONObject(body.decodeToString())
+                    assertEquals("$format", sentAt, payload.getString("sentAt"))
+                    assertTrue("$format", !payload.has("sent_at"))
+                    assertEquals("$format", timestamp, payload.getJSONArray("events").getJSONObject(0).getString("timestamp"))
+                } else {
+                    val query = queryParameters(request)
+                    assertEquals("$format", sentAt, query["sentAt"])
+                    assertTrue("$format", "sent_at" !in query)
+                    assertEquals("$format", timestamp, query["timestamp"])
+                }
+                assertConforms(listOf(request))
             }
         }
     }
@@ -176,6 +210,9 @@ class SpecConformanceTest {
             "extra session field" to changingBody(batch) { it.getJSONObject("session").put("deviceId", "123") },
             "number in info" to changingBody(batch) { it.getJSONArray("events").getJSONObject(0).getJSONObject("info").put("cpu_percent", 3) },
             "no events" to changingBody(batch) { it.put("events", org.json.JSONArray()) },
+            "missing sentAt in body" to changingBody(batch) { it.remove("sentAt") },
+            "sentAt without milliseconds" to changingBody(batch) { it.put("sentAt", "2026-11-09T11:39:00Z") },
+            "missing sentAt in query" to changingQuery(queryString) { items -> items.filter { it.first != "sentAt" } },
         )
         val missed = breakages.filter { (_, request) -> spec.violations(request).isEmpty() }.keys
         assertTrue("Not caught: $missed", missed.isEmpty())

@@ -18,7 +18,7 @@ private struct CheckoutError: Error {}
 /// The example endpoint used by the spec's server and paths.
 private let endpoint = URL(string: "https://api.example.com/events")!
 
-private let formats: [DavyConfiguration.RequestFormat] = [.jsonBatch, .queryString(method: .post), .queryString(method: .get)]
+private let formats: [DavyConfiguration.RequestFormat] = [.jsonBatch, .jsonEvent(), .queryString(method: .post), .queryString(method: .get)]
 
 /// Records each way `request` breaks the spec as an issue.
 private func expectConforms(_ request: URLRequest, to spec: OpenAPISpec, sourceLocation: SourceLocation = #_sourceLocation) {
@@ -80,6 +80,7 @@ struct SpecConformanceTests {
         let endpoint: URL
         let format: Format
         let headers: [String: String]
+        let sentAt: Date
         let session: Session
         let events: [EventRecord]
         let expected: Expected
@@ -97,13 +98,20 @@ struct SpecConformanceTests {
         #expect(!fixtures.isEmpty)
 
         for (fixture, rawCase) in zip(fixtures, rawCases) {
-            let format: DavyConfiguration.RequestFormat = if let method = fixture.format.method {
-                .queryString(method: try #require(DavyConfiguration.HTTPMethod(rawValue: method)))
-            } else {
-                .jsonBatch
+            let format: DavyConfiguration.RequestFormat
+            switch fixture.format.type {
+            case "jsonBatch":
+                format = .jsonBatch
+            case "jsonEvent":
+                format = .jsonEvent()
+            case "queryString":
+                format = .queryString(method: try #require(fixture.format.method.flatMap(DavyConfiguration.HTTPMethod.init)))
+            default:
+                Issue.record("Unknown format \(fixture.format.type) in \(fixture.name)")
+                continue
             }
             let builder = RequestBuilder(configuration: .init(endpoint: fixture.endpoint, format: format, headers: fixture.headers))
-            let request = try builder.request(session: fixture.session, events: fixture.events)
+            let request = try builder.request(session: fixture.session, events: fixture.events, sentAt: fixture.sentAt)
 
             let comment = Comment(rawValue: fixture.name)
             #expect(request.httpMethod == fixture.expected.method, comment)
@@ -169,8 +177,39 @@ struct SpecConformanceTests {
         let event = EventRecord(.breadcrumb("checkout_started"), timestamp: Date(timeIntervalSince1970: 1_700_000_000))
 
         for session in sessions {
-            expectConforms(try builder.request(session: session, events: [event]), to: spec)
+            expectConforms(try builder.request(session: session, events: [event], sentAt: .now), to: spec)
         }
+    }
+
+    @Test(arguments: formats, [
+        "2023-11-14T22:13:25.000Z",
+        "2023-11-14T22:13:25.007Z",
+    ])
+    func `Send times use the event timestamp format without replacing event times`(
+        format: DavyConfiguration.RequestFormat, sentAt: String
+    ) throws {
+        let timestamp = "2023-11-14T22:13:20.000Z"
+        let event = EventRecord(.breadcrumb("checkout_started"), timestamp: try Date(timestamp, strategy: DavyJSON.timestampStyle))
+        let session = Session.start(environment: nil)
+        let builder = RequestBuilder(configuration: .init(endpoint: endpoint, format: format))
+        let request = try builder.request(
+            session: session, events: [event], sentAt: Date(sentAt, strategy: DavyJSON.timestampStyle)
+        )
+
+        if let body = request.httpBody {
+            let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            #expect(payload["sentAt"] as? String == sentAt)
+            #expect(payload["sent_at"] == nil)
+            let events = try #require(payload["events"] as? [[String: Any]])
+            #expect(events.first?["timestamp"] as? String == timestamp)
+        } else {
+            let url = try #require(request.url)
+            let items = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+            #expect(items.filter { $0.name == "sentAt" }.map(\.value) == [sentAt])
+            #expect(!items.contains { $0.name == "sent_at" })
+            #expect(items.first { $0.name == "timestamp" }?.value == timestamp)
+        }
+        expectConforms(request, to: try OpenAPISpec.load())
     }
 
     @Test func everyStatusCodeIsHandledAsTheSpecDescribes() throws {
@@ -215,6 +254,9 @@ struct SpecConformanceTests {
         case extraSessionField
         case numberInInfo
         case noEvents
+        case missingSentAtInBody
+        case sentAtWithoutMilliseconds
+        case missingSentAtInQuery
     }
 
     @Test(arguments: Breakage.allCases)
@@ -226,9 +268,9 @@ struct SpecConformanceTests {
         )
         let events = [EventRecord(.error("payment_declined", info: ["reason": "card_expired"]), timestamp: .now)]
         let queryString = try RequestBuilder(configuration: DavyConfiguration(endpoint: endpoint, format: .queryString()))
-            .request(session: session, events: events)
+            .request(session: session, events: events, sentAt: .now)
         let batch = try RequestBuilder(configuration: DavyConfiguration(endpoint: endpoint))
-            .request(session: session, events: events)
+            .request(session: session, events: events, sentAt: .now)
         #expect(spec.violations(of: queryString).isEmpty)
         #expect(spec.violations(of: batch).isEmpty)
 
@@ -270,6 +312,12 @@ struct SpecConformanceTests {
             }
         case .noEvents:
             try changingBody(of: batch) { $0["events"] = [] }
+        case .missingSentAtInBody:
+            try changingBody(of: batch) { $0["sentAt"] = nil }
+        case .sentAtWithoutMilliseconds:
+            try changingBody(of: batch) { $0["sentAt"] = "2026-11-09T11:39:00Z" }
+        case .missingSentAtInQuery:
+            try changingQuery(of: queryString) { $0.removeAll { $0.name == "sentAt" } }
         }
         #expect(!spec.violations(of: broken).isEmpty)
     }

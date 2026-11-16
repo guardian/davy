@@ -43,6 +43,7 @@ private actor MockTransport: EventTransport {
     private var statusCode = 200
     private var headers: [String: String] = [:]
     private var delay: Duration = .zero
+    private var isOffline = false
 
     var attempts: Int { requests.count }
     var sentEvents: [ReceivedEvent] { payloads.flatMap(\.events) }
@@ -61,6 +62,11 @@ private actor MockTransport: EventTransport {
         self.delay = delay
     }
 
+    /// Fails every request without a response, like a device with no connection.
+    func setOffline(_ offline: Bool) {
+        isOffline = offline
+    }
+
     func send(_ request: URLRequest) async throws -> HTTPURLResponse {
         requests.append(request)
         running += 1
@@ -69,6 +75,9 @@ private actor MockTransport: EventTransport {
         let (statusCode, headers) = (statusCode, headers)
         if delay > .zero {
             try await Task.sleep(for: delay)
+        }
+        if isOffline {
+            throw URLError(.notConnectedToInternet)
         }
 
         if (200..<300).contains(statusCode) {
@@ -638,6 +647,120 @@ struct DavyTests {
         #expect(deliveredNames.count == 6)
     }
 
+    @Test func jsonEventSendsEachEventAsABatchOfOneConcurrently() async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transport = MockTransport()
+        await transport.setDelay(.milliseconds(50))
+        let telemetry = makeDavy(directory: directory, transport: transport, format: .jsonEvent(maxConcurrentRequests: 3))
+
+        for index in 0..<6 {
+            telemetry.log(.breadcrumb("event_\(index)"))
+        }
+        await telemetry.flushAndWait()
+
+        let requests = await transport.requests
+        #expect(requests.count == 6)
+        #expect(requests.allSatisfy { $0.httpMethod == "POST" && $0.url?.absoluteString == "https://example.com/events" })
+        #expect(await transport.payloads.map(\.events.count) == Array(repeating: 1, count: 6))
+        #expect(Set(await transport.sentNames) == Set((0..<6).map { "event_\($0)" }))
+        #expect(await transport.concurrencyAtStart.max() == 3)
+    }
+
+    @Test func debugSnapshotRecordsEachRequestWithItsResponse() async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transport = MockTransport()
+        await transport.setFailing(true)
+        let telemetry = makeDavy(directory: directory, transport: transport, headers: ["Authorization": "Bearer token"])
+
+        telemetry.log(.breadcrumb("checkout_started"))
+        telemetry.log(.breadcrumb("checkout_finished"))
+        let start = Date.now
+        await telemetry.flushAndWait()
+        let pending = await telemetry.debugSnapshot().pending
+        await transport.setFailing(false)
+        await telemetry.flushAndWait()
+        let requests = await telemetry.debugSnapshot().requests
+
+        try #require(requests.count == 2)
+        #expect(requests.map(\.statusCode) == [500, 200])
+        #expect(requests.map(\.outcome) == [.failed(reason: "HTTP 500"), .delivered])
+        for request in requests {
+            #expect(request.method == "POST")
+            #expect(request.url.absoluteString == "https://example.com/events")
+            #expect(request.headers == ["Content-Type": "application/json", "Authorization": "Bearer token"])
+            #expect(request.eventIDs == pending.map(\.id))
+            #expect(request.body?.contains(#""name":"checkout_finished""#) == true)
+            #expect((start...Date.now).contains(request.sentAt))
+            #expect(request.duration >= 0)
+        }
+    }
+
+    @Test(arguments: [
+        (429, ["Retry-After": "120"], DavyDebugSnapshot.Request.Outcome.throttled(retryAfter: 120)),
+        (400, [:], .rejected),
+    ])
+    func debugSnapshotRecordsThrottledAndRejectedRequests(
+        statusCode: Int,
+        headers: [String: String],
+        outcome: DavyDebugSnapshot.Request.Outcome
+    ) async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transport = MockTransport()
+        await transport.respond(with: statusCode, headers: headers)
+        let telemetry = makeDavy(directory: directory, transport: transport)
+        telemetry.log(.breadcrumb("checkout_started"))
+        await telemetry.flushAndWait()
+
+        // The server's Retry-After is recorded, not the randomly lengthened pause.
+        let request = try #require(await telemetry.debugSnapshot().requests.first)
+        #expect(request.statusCode == statusCode)
+        #expect(request.outcome == outcome)
+    }
+
+    @Test func debugSnapshotRecordsRequestsThatGetNoResponse() async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transport = MockTransport()
+        await transport.setOffline(true)
+        let telemetry = makeDavy(directory: directory, transport: transport, format: .queryString(method: .get))
+
+        telemetry.log(.breadcrumb("checkout_started"))
+        await telemetry.flushAndWait()
+        let snapshot = await telemetry.debugSnapshot()
+
+        let request = try #require(snapshot.requests.first)
+        let reason = try #require(snapshot.lastFailure?.reason)
+        #expect(request.statusCode == nil)
+        #expect(request.outcome == .failed(reason: reason))
+        #expect(request.method == "GET")
+        #expect(request.url.path() == "/events/checkout_started")
+        #expect(request.body == nil)
+    }
+
+    @Test func requestHistoryIsLimitedAndCanBeCleared() async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transport = MockTransport()
+        let telemetry = makeDavy(
+            directory: directory,
+            transport: transport,
+            format: .queryString(maxConcurrentRequests: 1),
+            debugHistoryLimit: 2
+        )
+
+        for name in ["first", "second", "third"] {
+            telemetry.log(.breadcrumb(name))
+        }
+        await telemetry.flushAndWait()
+        #expect(await telemetry.debugSnapshot().requests.map(\.url.lastPathComponent) == ["second", "third"])
+
+        telemetry.clearDebugHistory()
+        #expect(await telemetry.debugSnapshot().requests.isEmpty)
+    }
+
     @Test func debugSnapshotListsUnsentEventsAsPending() async throws {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -741,6 +864,40 @@ struct DavyTests {
 
         #expect(snapshot.pending.count == 3)
         #expect(snapshot.activity.reduce(0) { $0 + $1.logged } == 3)
+    }
+
+    @Test func debugCountsEveryLoggedEventAsPendingOrSent() async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var store = FileEventStore(directory: directory.appending(path: "events", directoryHint: .isDirectory))
+        let session = Session.start(environment: nil)
+        // Left over from earlier launches: one logged before the last hour, one expired, and one
+        // that can't be decoded. Only the first can be sent, so only it counts as logged.
+        for (name, loggedAt) in [("earlier", Date.now.addingTimeInterval(-2 * 60 * 60)), ("expired", Date.now.addingTimeInterval(-31 * 24 * 60 * 60))] {
+            let pending = PendingEvent(session: session, event: EventRecord(.breadcrumb(name), timestamp: loggedAt))
+            try store.append(DavyJSON.encoder.encode(pending), loggedAt: loggedAt)
+        }
+        try store.append(Data(#"{"not":"an event"}"#.utf8), loggedAt: .now.addingTimeInterval(-60))
+
+        let transport = MockTransport()
+        await transport.setFailing(true)
+        let telemetry = makeDavy(directory: directory, transport: transport)
+        telemetry.log(.breadcrumb("checkout_started"))
+        telemetry.log(.breadcrumb("checkout_finished"))
+        await telemetry.flushAndWait()
+        let failed = await telemetry.debugSnapshot()
+        #expect(failed.loggedCount == 3)
+        #expect(failed.pending.count == 3)
+        #expect(failed.sentCount == 0)
+
+        await transport.respond(with: 400)
+        telemetry.log(.breadcrumb("checkout_abandoned"))
+        await telemetry.flushAndWait()
+        telemetry.clearDebugHistory()
+        let sent = await telemetry.debugSnapshot()
+        #expect(sent.loggedCount == 4)
+        #expect(sent.pending.isEmpty)
+        #expect(sent.sentCount == 4)
     }
 
     @Test func debugSnapshotListsWhenEachSessionLoggedItsFirstEvent() async throws {

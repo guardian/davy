@@ -94,11 +94,19 @@ actor EventPipeline {
     /// Events the server responded to, oldest first, up to
     /// ``DavyConfiguration/debugHistoryLimit``.
     private var sentHistory: [DavyDebugSnapshot.SentEvent] = []
+    /// Requests that finished, in the order they finished, up to
+    /// ``DavyConfiguration/debugHistoryLimit``.
+    private var requestHistory: [DavyDebugSnapshot.Request] = []
     /// The most recent failure to send, cleared once the server responds to a request.
     private var lastFailure: DavyDebugSnapshot.Failure?
     /// Events logged and sent each minute, oldest first, back to
     /// ``DavyDebugSnapshot/activityWindow`` ago.
     private var activity: [DavyDebugSnapshot.Activity] = []
+    /// Events left over from earlier launches when this instance was created, plus the events it
+    /// stored, including any since discarded.
+    private var loggedCount: Int
+    /// Events the server accepted or rejected since this instance was created.
+    private var sentCount = 0
     /// When the first event this instance knows about was logged, for each session.
     private var sessionStarts: [UUID: Date] = [:]
     private var debugObservers: [UUID: AsyncStream<DavyDebugSnapshot>.Continuation] = [:]
@@ -117,7 +125,7 @@ actor EventPipeline {
         case .jsonBatch:
             self.eventsPerRequest = batchSize
             self.maxConcurrentRequests = 1
-        case let .queryString(_, maxConcurrentRequests):
+        case let .jsonEvent(maxConcurrentRequests), let .queryString(_, maxConcurrentRequests):
             self.eventsPerRequest = 1
             self.maxConcurrentRequests = max(1, maxConcurrentRequests)
         }
@@ -125,7 +133,9 @@ actor EventPipeline {
         self.transport = transport
         self.retryPolicy = retryPolicy
         self.pauseFile = configuration.storageDirectory.appending(path: "paused-until", directoryHint: .notDirectory)
-        self.store = FileEventStore(directory: configuration.storageDirectory.appending(path: "events", directoryHint: .isDirectory))
+        let store = FileEventStore(directory: configuration.storageDirectory.appending(path: "events", directoryHint: .isDirectory))
+        self.store = store
+        self.loggedCount = store.count
     }
 
     /// Consumes commands in order until the stream finishes.
@@ -173,6 +183,7 @@ actor EventPipeline {
             debugObservers[id] = nil
         case .clearDebugHistory:
             sentHistory.removeAll()
+            requestHistory.removeAll()
             debugStateDidChange()
         }
     }
@@ -186,6 +197,7 @@ actor EventPipeline {
             logger.error("Failed to store event: \(error)")
             return
         }
+        loggedCount += 1
         recordActivity(logged: 1, at: record.timestamp)
         recordSessionEvent(session.id, loggedAt: record.timestamp)
         debugStateDidChange()
@@ -263,19 +275,23 @@ actor EventPipeline {
         var failed = false
         var concurrency = isProbing ? 1 : maxConcurrentRequests
         repeat {
-            await withTaskGroup(of: (Delivery, DeliveryOutcome).self) { group in
+            await withTaskGroup(of: (Delivery, DeliveryOutcome, DavyDebugSnapshot.Request?).self) { group in
                 var running = 0
                 while true {
                     while !failed, pausedUntil == nil, running < concurrency, let delivery = nextDelivery() {
                         inFlight.formUnion(delivery.stored.map(\.fileName))
                         running += 1
                         group.addTask { [transport, requestBuilder] in
-                            (delivery, await Self.send(delivery, via: transport, requestBuilder: requestBuilder))
+                            let (outcome, request) = await Self.send(delivery, via: transport, requestBuilder: requestBuilder)
+                            return (delivery, outcome, request)
                         }
                     }
-                    guard let (delivery, outcome) = await group.next() else { break }
+                    guard let (delivery, outcome, request) = await group.next() else { break }
                     running -= 1
                     inFlight.subtract(delivery.stored.map(\.fileName))
+                    if let request {
+                        recordRequest(request)
+                    }
 
                     switch outcome {
                     case .delivered:
@@ -330,18 +346,36 @@ actor EventPipeline {
         }
     }
 
+    /// Sends `delivery`, and describes the request for the debug history unless it couldn't be
+    /// built.
     private static func send(
         _ delivery: Delivery,
         via transport: any EventTransport,
         requestBuilder: RequestBuilder
-    ) async -> DeliveryOutcome {
+    ) async -> (outcome: DeliveryOutcome, request: DavyDebugSnapshot.Request?) {
         let request: URLRequest
+        let sentAt = Date.now
         do {
-            request = try requestBuilder.request(session: delivery.session, events: delivery.events)
+            request = try requestBuilder.request(session: delivery.session, events: delivery.events, sentAt: sentAt)
         } catch {
-            return .failed("Couldn't build request: \(error)")
+            return (.failed("Couldn't build request: \(error)"), nil)
         }
-        return await transport.deliver(request)
+        let clock = ContinuousClock()
+        let start = clock.now
+        let (outcome, statusCode) = await transport.deliver(request)
+        let sent = DavyDebugSnapshot.Request(
+            id: UUID(),
+            method: request.httpMethod ?? "GET",
+            url: request.url ?? requestBuilder.endpoint,
+            headers: request.allHTTPHeaderFields ?? [:],
+            body: request.httpBody.map { String(decoding: $0, as: UTF8.self) },
+            eventIDs: delivery.events.map(\.id),
+            sentAt: sentAt,
+            duration: (clock.now - start).timeInterval,
+            statusCode: statusCode,
+            outcome: DavyDebugSnapshot.Request.Outcome(outcome)
+        )
+        return (outcome, sent)
     }
 
     /// Decodes stored events, discarding any that can't be decoded so they don't block the queue.
@@ -357,7 +391,7 @@ actor EventPipeline {
         }
         if !undecodable.isEmpty {
             logger.error("Discarding \(undecodable.count) undecodable event(s)")
-            store.remove(undecodable)
+            store.discard(undecodable)
         }
         return decoded
     }
@@ -430,6 +464,7 @@ actor EventPipeline {
     private func recordSent(_ delivery: Delivery, outcome: DavyDebugSnapshot.SentEvent.Outcome) {
         lastFailure = nil
         let sentAt = Date.now
+        sentCount += delivery.events.count
         recordActivity(sent: delivery.events.count, at: sentAt)
         for record in delivery.events {
             recordSessionEvent(delivery.session.id, loggedAt: record.timestamp)
@@ -452,6 +487,16 @@ actor EventPipeline {
 
     private func recordFailure(_ reason: String) {
         lastFailure = DavyDebugSnapshot.Failure(reason: reason, date: .now)
+        debugStateDidChange()
+    }
+
+    private func recordRequest(_ request: DavyDebugSnapshot.Request) {
+        let limit = configuration.debugHistoryLimit
+        guard limit > 0 else { return }
+        requestHistory.append(request)
+        if requestHistory.count > limit {
+            requestHistory.removeFirst(requestHistory.count - limit)
+        }
         debugStateDidChange()
     }
 
@@ -490,13 +535,12 @@ actor EventPipeline {
         sessionStarts[sessionID] = date
     }
 
-    /// Every pending event read back from disk, with the sent history, last failure, activity, and
+    /// Every pending event read back from disk, discarding any that can't be decoded so the
+    /// counts add up, with the sent and request histories, last failure, counts, activity, and
     /// session starts.
     private func debugSnapshot() -> DavyDebugSnapshot {
-        let pending = store.oldest(store.count).compactMap { stored in
-            (try? DavyJSON.decoder.decode(PendingEvent.self, from: stored.data)).map {
-                DavyDebugSnapshot.LoggedEvent(record: $0.event, session: $0.session)
-            }
+        let pending = decode(store.oldest(store.count)).map {
+            DavyDebugSnapshot.LoggedEvent(record: $0.pending.event, session: $0.pending.session)
         }
         for event in pending {
             recordSessionEvent(event.sessionID, loggedAt: event.timestamp)
@@ -505,6 +549,9 @@ actor EventPipeline {
         return DavyDebugSnapshot(
             pending: pending,
             sent: sentHistory,
+            requests: requestHistory,
+            loggedCount: loggedCount - store.discardedCount,
+            sentCount: sentCount,
             lastFailure: lastFailure,
             activity: activity.filter { $0.minute >= activityStart },
             sessionStarts: sessionStarts

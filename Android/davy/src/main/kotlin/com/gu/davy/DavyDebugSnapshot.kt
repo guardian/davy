@@ -3,9 +3,9 @@ package com.gu.davy
 import java.util.UUID
 
 /**
- * The events a [Davy] instance is waiting to send, the events it has recently sent, the most recent
- * failure to send, and how many events it logged and sent each minute over the last hour, for
- * checking your events during development.
+ * The events a [Davy] instance is waiting to send, the events and requests it has recently sent,
+ * how many events it has logged and sent, the most recent failure to send, and how many events it
+ * logged and sent each minute over the last hour, for checking your events during development.
  *
  * Get one with [Davy.debugSnapshot], or a new one each time something changes with
  * [Davy.addDebugListener]. [DavyDebugActivity] shows the same information. Times are in
@@ -16,6 +16,16 @@ import java.util.UUID
  *   and events in requests that haven't finished.
  * @property sent Events the server has accepted or rejected since this instance was created,
  *   oldest first, up to [DavyConfiguration.debugHistoryLimit].
+ * @property requests Requests that finished since this instance was created, in the order they
+ *   finished, up to [DavyConfiguration.debugHistoryLimit]. Includes requests that failed or were
+ *   throttled, so you can see why events are still pending.
+ * @property loggedCount How many events this instance has logged, plus how many were left over
+ *   from earlier launches when it was created. Each is either pending or sent, so this is always
+ *   `pending.size + sentCount`. Events discarded without being sent, because they were older than
+ *   [DavyConfiguration.maxEventAge] or couldn't be read, aren't counted.
+ * @property sentCount How many events the server has accepted or rejected since this instance was
+ *   created, including events left over from earlier launches. Unlike [sent], this isn't limited
+ *   by [DavyConfiguration.debugHistoryLimit] or reset by [Davy.clearDebugHistory].
  * @property lastFailure The most recent failure to send, if no request has succeeded since.
  * @property activity How many events were logged and sent in each minute of the last hour, oldest
  *   first. Minutes in which nothing was logged or sent are left out. Includes events left over from
@@ -28,6 +38,9 @@ import java.util.UUID
 public data class DavyDebugSnapshot(
     val pending: List<LoggedEvent>,
     val sent: List<SentEvent>,
+    val requests: List<Request>,
+    val loggedCount: Int,
+    val sentCount: Int,
     val lastFailure: Failure?,
     val activity: List<Activity>,
     val sessionStarts: List<SessionStart>,
@@ -91,6 +104,58 @@ public data class DavyDebugSnapshot(
     }
 
     /**
+     * An HTTP request Davy sent, with how the server responded.
+     *
+     * @property id A random identifier for the request.
+     * @property method The HTTP method, `POST` or `GET`.
+     * @property url The full URL, including any query string.
+     * @property headers The header fields Davy set: [DavyConfiguration.headers] and, for JSON
+     *   bodies, `Content-Type`.
+     * @property body The JSON body, or `null` for query string requests, which have none.
+     * @property eventIds The IDs of the events in the request, oldest first.
+     * @property sentAtMillis When the request was sent.
+     * @property durationMillis How long until the response arrived or the request failed.
+     * @property statusCode The response's HTTP status code, or `null` if no response was received,
+     *   for example because the device is offline.
+     * @property outcome What the response meant for the request's events.
+     */
+    public data class Request(
+        val id: UUID,
+        val method: String,
+        val url: String,
+        val headers: Map<String, String>,
+        val body: String?,
+        val eventIds: List<UUID>,
+        val sentAtMillis: Long,
+        val durationMillis: Long,
+        val statusCode: Int?,
+        val outcome: Outcome,
+    ) {
+        /** What a response meant for a request's events. */
+        public sealed class Outcome {
+            /** The server accepted the events with a 2xx response. */
+            public data object Delivered : Outcome()
+
+            /** The server permanently rejected the events, for example with 400 Bad Request, so they were discarded. */
+            public data object Rejected : Outcome()
+
+            /**
+             * The server asked for a pause with `Retry-After`, so the events were kept.
+             *
+             * @property retryAfterSeconds How long the server asked to wait before sending again.
+             */
+            public data class Throttled(val retryAfterSeconds: Double) : Outcome()
+
+            /**
+             * No response was received, or the response means the events should be retried.
+             *
+             * @property reason Why, as in [Failure.reason], for example `HTTP 500` or a network error.
+             */
+            public data class Failed(val reason: String) : Outcome()
+        }
+    }
+
+    /**
      * A request that failed, leaving its events pending to be retried.
      *
      * @property reason Why the request failed, for example `HTTP 500` or a network error.
@@ -124,7 +189,7 @@ public data class DavyDebugSnapshot(
 
     public companion object {
         /** A snapshot with nothing pending, sent, or logged. */
-        public val EMPTY: DavyDebugSnapshot = DavyDebugSnapshot(emptyList(), emptyList(), null, emptyList(), emptyList())
+        public val EMPTY: DavyDebugSnapshot = DavyDebugSnapshot(emptyList(), emptyList(), emptyList(), 0, 0, null, emptyList(), emptyList())
 
         private const val MINUTE_MILLIS = 60_000L
 

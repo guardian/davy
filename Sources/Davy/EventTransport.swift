@@ -13,12 +13,14 @@ protocol EventTransport: Sendable {
 }
 
 extension EventTransport {
-    /// Sends `request` and classifies the result.
-    func deliver(_ request: URLRequest) async -> DeliveryOutcome {
+    /// Sends `request` and classifies the result, with the response's status code if one was
+    /// received.
+    func deliver(_ request: URLRequest) async -> (outcome: DeliveryOutcome, statusCode: Int?) {
         do {
-            return DeliveryOutcome(try await send(request))
+            let response = try await send(request)
+            return (DeliveryOutcome(response), response.statusCode)
         } catch {
-            return .failed("\(error)")
+            return (.failed("\(error)"), nil)
         }
     }
 }
@@ -81,6 +83,21 @@ enum DeliveryOutcome: Sendable {
             self = .rejected(statusCode: statusCode)
         default:
             self = .failed("HTTP \(statusCode)")
+        }
+    }
+}
+
+extension DavyDebugSnapshot.Request.Outcome {
+    init(_ outcome: DeliveryOutcome) {
+        switch outcome {
+        case .delivered:
+            self = .delivered
+        case .rejected:
+            self = .rejected
+        case let .throttled(retryAfter):
+            self = .throttled(retryAfter: retryAfter)
+        case let .failed(reason):
+            self = .failed(reason: reason)
         }
     }
 }

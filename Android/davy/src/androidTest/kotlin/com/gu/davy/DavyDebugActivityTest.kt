@@ -71,11 +71,50 @@ class DavyDebugActivityTest {
             assertTrue(detailTexts.toString(), "Pending" in detailTexts)
             assertTrue(detailTexts.toString(), "card_expired" in detailTexts)
             assertTrue(detailTexts.toString(), detailTexts.any { "\"reason\" : \"card_expired\"" in it })
+
+            // The event lists the requests that included it; select one to see the request.
+            assertTrue(detailTexts.toString(), "REQUESTS" in detailTexts)
+            val request = select(detail, "POST /events")
+            activities += request
+            assertTrue(waitUntil { onMain { "BODY" in texts(request.window.decorView) } })
+            val requestTexts = onMain { texts(request.window.decorView) }
+            assertEquals("POST /events", onMain { request.title.toString() })
+            assertTrue(requestTexts.toString(), "No response" in requestTexts)
+            assertTrue(requestTexts.toString(), "Failed" in requestTexts)
+            assertTrue(requestTexts.toString(), "REASON" in requestTexts)
+            assertTrue(requestTexts.toString(), "EVENTS (2)" in requestTexts)
+            assertTrue(requestTexts.toString(), "Content-Type: application/json" in requestTexts)
+            assertTrue(requestTexts.toString(), requestTexts.any { "\"name\" : \"payment_declined\"" in it })
+
+            // The list of requests is searched by URL and body.
+            assertTrue(onMain { texts(list.window.decorView) }.any { it.startsWith("REQUESTS (") })
+            val requests = select(list, "Show Requests")
+            activities += requests
+            assertTrue(waitUntil { onMain { requests.listedRequests.isNotEmpty() } })
+            assertEquals("Requests", onMain { requests.title.toString() })
+            onMain { requests.searchText = "PAYMENT_DECLINED" }
+            assertTrue(onMain { requests.listedRequests.isNotEmpty() })
+            onMain { requests.searchText = "refund" }
+            assertTrue(onMain { requests.listedRequests.isEmpty() })
+            assertTrue(onMain { "No requests match the search." in texts(requests.window.decorView) })
         } finally {
             onMain { activities.forEach(Activity::finish) }
             telemetry.close()
             directory.deleteRecursively()
         }
+    }
+
+    /** Selects the row containing [text] in [activity], returning the screen it opens. */
+    private fun select(activity: Activity, text: String): DavyDebugActivity {
+        val monitor = instrumentation.addMonitor(DavyDebugActivity::class.java.name, null, false)
+        onMain {
+            val label = views<TextView>(activity.window.decorView).first { it.text.toString() == text }
+            // Each row is a label in a column beside its mark or chevron.
+            (label.parent.parent as View).performClick()
+        }
+        val opened = monitor.waitForActivityWithTimeout(5_000) as DavyDebugActivity
+        instrumentation.removeMonitor(monitor)
+        return opened
     }
 
     private fun <T> onMain(block: () -> T): T {

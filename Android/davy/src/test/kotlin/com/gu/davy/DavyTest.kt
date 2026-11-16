@@ -472,6 +472,45 @@ class DavyTest {
     }
 
     @Test
+    fun jsonEventSendsEachEventAsItsOwnJsonRequestConcurrently() {
+        val transport = MockTransport().apply { delayMillis = 50 }
+        val session = testSession("beta")
+        val telemetry = makeDavy(
+            directory(),
+            transport,
+            endpoint = "https://example.com/events?key=abc",
+            format = RequestFormat.JsonEvent(maxConcurrentRequests = 3),
+            environment = "beta",
+            headers = mapOf("Authorization" to "Bearer token"),
+            session = session,
+        ).tracked()
+
+        repeat(6) { telemetry.log(Event.Breadcrumb("event_$it")) }
+        telemetry.flushAndWaitBlocking()
+
+        val requests = transport.requests
+        assertEquals(6, requests.size)
+        for (request in requests) {
+            assertEquals("POST", request.method)
+            assertEquals("https://example.com/events?key=abc", request.url)
+            assertEquals("application/json", request.headers["Content-Type"])
+            assertEquals("Bearer token", request.headers["Authorization"])
+            val payload = JSONObject(request.body!!.decodeToString())
+            assertEquals(1, payload.getJSONArray("events").length())
+            assertEquals(session, DavyJson.parseSession(payload.getJSONObject("session")))
+        }
+        // Requests are sent concurrently, so they may arrive in any order.
+        assertEquals((0 until 6).map { "event_$it" }.toSet(), transport.sentNames.toSet())
+        assertEquals(6, transport.sentNames.size)
+        assertEquals(listOf(1, 2, 3), transport.concurrencyAtStart.take(3))
+        assertEquals(3, transport.concurrencyAtStart.max())
+
+        val builder = RequestBuilder(URI("https://example.com/events"), emptyMap(), RequestFormat.JsonEvent())
+        val events = listOf(Event.Breadcrumb("event_0"), Event.Breadcrumb("event_1")).map { EventRecord.from(it, System.currentTimeMillis()) }
+        assertThrows(IllegalArgumentException::class.java) { builder.request(session, events, System.currentTimeMillis()) }
+    }
+
+    @Test
     fun measureLogsABreadcrumbWithItsDurationEvenWhenTheBodyThrows() {
         val transport = MockTransport()
         val telemetry = makeDavy(directory(), transport).tracked()

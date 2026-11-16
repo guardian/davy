@@ -11,7 +11,7 @@ import kotlin.time.Duration.Companion.seconds
  *
  * @property endpoint The URL that events are sent to, in the configured [format].
  * @property format How events are encoded into requests: in batches as a JSON body (the default),
- *   or one request per event with every field in the URL.
+ *   one request per event with a JSON body, or one request per event with every field in the URL.
  * @property environment The kind of build sending events, for example `debug`, `beta`, or
  *   `production`, sent as the session's `environment`. Omitted when `null`. Use it to keep test
  *   data apart from real usage.
@@ -34,15 +34,16 @@ import kotlin.time.Duration.Companion.seconds
  *   `Authorization` header.
  * @property batchSize The number of pending events that triggers an immediate send. With
  *   [RequestFormat.JsonBatch], also the maximum number of events in a single request. Values below
- *   1 are treated as 1.
+ *   1 are treated as 1. To send each event as soon as it's logged, set it to 1.
  * @property debounceInterval How long to wait after the most recent event before sending a
  *   partially filled batch.
  * @property maxEventAge Events older than this are discarded without being sent.
  * @property storageDirectory The directory where pending events are stored, or `null` for
  *   [Davy.defaultStorageDirectory]. Each [Davy] instance should use its own directory.
- * @property debugHistoryLimit How many sent events to keep in memory for [Davy.debugSnapshot] and
- *   [DavyDebugActivity]. The oldest are dropped once there are more. `0` keeps none. The history
- *   isn't stored on disk, so it starts empty each time an instance is created.
+ * @property debugHistoryLimit How many sent events, and how many requests, to keep in memory for
+ *   [Davy.debugSnapshot] and [DavyDebugActivity]. The oldest are dropped once there are more. `0`
+ *   keeps none. The history isn't stored on disk, so it starts empty each time an instance is
+ *   created. Each request is kept with its body, so lower this if memory is tight.
  */
 public data class DavyConfiguration(
     val endpoint: URI,
@@ -68,9 +69,22 @@ public sealed class RequestFormat {
     public data object JsonBatch : RequestFormat()
 
     /**
+     * Each event is `POST`ed as its own request, with the same JSON body as [JsonBatch] containing
+     * exactly one event: `{ "session": { … }, "events": [ { … } ] }`.
+     *
+     * Suits servers that handle one event per request, and keeps one rejected event from discarding
+     * a whole batch. The same endpoint handles both formats, so switching between them needs no
+     * server changes.
+     *
+     * @property maxConcurrentRequests How many requests can be in flight at once, so events can
+     *   arrive out of order. Values below 1 are treated as 1.
+     */
+    public data class JsonEvent(val maxConcurrentRequests: Int = 4) : RequestFormat()
+
+    /**
      * Each event is sent as its own request with an empty body. The event's name is appended to the
      * endpoint's path, and every other field is a query parameter:
-     * `<endpoint>/checkout_started?eventId=…&type=breadcrumb&timestamp=…&sessionId=…`.
+     * `<endpoint>/checkout_started?eventId=…&type=breadcrumb&timestamp=…&sentAt=…&sessionId=…`.
      *
      * Suits servers that can log fields from the URL but not from the body, such as a CDN that
      * logs requests straight to a data warehouse.

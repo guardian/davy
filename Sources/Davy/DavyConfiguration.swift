@@ -5,8 +5,8 @@ public struct DavyConfiguration: Sendable {
     /// The URL that events are sent to, in the configured ``format``.
     public var endpoint: URL
 
-    /// How events are encoded into requests: in batches as a JSON body (the default), or one
-    /// request per event with every field in the URL.
+    /// How events are encoded into requests: in batches as a JSON body (the default), one request
+    /// per event with a JSON body, or one request per event with every field in the URL.
     public var format: RequestFormat
 
     /// The kind of build sending events, for example `"debug"`, `"beta"`, or `"production"`, sent as
@@ -54,6 +54,8 @@ public struct DavyConfiguration: Sendable {
     /// The number of pending events that triggers an immediate send. With
     /// ``RequestFormat/jsonBatch``, also the maximum number of events included in a single request.
     /// Values below 1 are treated as 1.
+    ///
+    /// To send each event as soon as it's logged, set it to 1.
     public var batchSize: Int
 
     /// How long to wait after the most recent event before sending a partially filled batch.
@@ -67,10 +69,12 @@ public struct DavyConfiguration: Sendable {
     /// Each ``Davy`` instance should use its own directory.
     public var storageDirectory: URL
 
-    /// How many sent events to keep in memory for ``Davy/debugSnapshot()`` and
-    /// ``DavyDebugView``. The oldest are dropped once there are more. `0` keeps none.
+    /// How many sent events, and how many requests, to keep in memory for
+    /// ``Davy/debugSnapshot()`` and ``DavyDebugView``. The oldest are dropped once there are more.
+    /// `0` keeps none.
     ///
-    /// The history isn't stored on disk, so it starts empty each time an instance is created.
+    /// The history isn't stored on disk, so it starts empty each time an instance is created. Each
+    /// request is kept with its body, so lower this if memory is tight.
     public var debugHistoryLimit: Int
 
     /// Creates a configuration.
@@ -89,7 +93,7 @@ public struct DavyConfiguration: Sendable {
     ///   - debounceInterval: How long to wait after the most recent event before sending. Defaults to 10 seconds.
     ///   - maxEventAge: How long unsent events are kept. Defaults to 30 days.
     ///   - storageDirectory: Where events are persisted. Defaults to ``defaultStorageDirectory``.
-    ///   - debugHistoryLimit: How many sent events to keep in memory for debugging. Defaults to 200.
+    ///   - debugHistoryLimit: How many sent events and requests to keep in memory for debugging. Defaults to 200.
     public init(
         endpoint: URL,
         format: RequestFormat = .jsonBatch,
@@ -133,9 +137,20 @@ extension DavyConfiguration {
         /// body, `{ "session": { … }, "events": [ … ] }`, one request at a time.
         case jsonBatch
 
+        /// Each event is `POST`ed as its own request, with the same JSON body as ``jsonBatch``
+        /// containing exactly one event: `{ "session": { … }, "events": [ { … } ] }`.
+        ///
+        /// Suits servers that handle one event per request, and keeps one rejected event from
+        /// discarding a whole batch. The same endpoint handles both formats, so switching between
+        /// them needs no server changes.
+        ///
+        /// - Parameter maxConcurrentRequests: How many requests can be in flight at once, so
+        ///   events can arrive out of order. Values below 1 are treated as 1. Defaults to 4.
+        case jsonEvent(maxConcurrentRequests: Int = 4)
+
         /// Each event is sent as its own request with an empty body. The event's name is appended
         /// to the endpoint's path, and every other field is a query parameter:
-        /// `<endpoint>/checkout_started?eventId=…&type=breadcrumb&timestamp=…&sessionId=…`.
+        /// `<endpoint>/checkout_started?eventId=…&type=breadcrumb&timestamp=…&sentAt=…&sessionId=…`.
         ///
         /// Suits servers that can log fields from the URL but not from the body, such as a CDN
         /// that logs requests straight to a data warehouse.

@@ -54,6 +54,10 @@ internal class EventPipeline(
                 eventsPerRequest = batchSize
                 maxConcurrentRequests = 1
             }
+            is RequestFormat.JsonEvent -> {
+                eventsPerRequest = 1
+                maxConcurrentRequests = format.maxConcurrentRequests.coerceAtLeast(1)
+            }
             is RequestFormat.QueryString -> {
                 eventsPerRequest = 1
                 maxConcurrentRequests = format.maxConcurrentRequests.coerceAtLeast(1)
@@ -99,11 +103,20 @@ internal class EventPipeline(
     /** Events the server responded to, oldest first, up to the debug history limit. */
     private val sentHistory = ArrayDeque<DavyDebugSnapshot.SentEvent>()
 
+    /** Requests in the order they finished, up to the debug history limit. */
+    private val requestHistory = ArrayDeque<DavyDebugSnapshot.Request>()
+
     /** The most recent failure to send, cleared once the server responds to a request. */
     private var lastFailure: DavyDebugSnapshot.Failure? = null
 
     /** Events logged and sent each minute, oldest first, back to an hour ago. */
     private val activity = mutableListOf<DavyDebugSnapshot.Activity>()
+
+    /** Events left over from earlier launches when the store was opened, plus the events stored since, including any since discarded. */
+    private var loggedCount = 0
+
+    /** Events the server accepted or rejected since this instance was created. */
+    private var sentCount = 0
 
     /** When the first event this instance knows about was logged, for each session. */
     private val sessionStarts = mutableMapOf<UUID, Long>()
@@ -114,6 +127,7 @@ internal class EventPipeline(
     fun start() {
         submit {
             store = FileEventStore(File(storageDirectory, "events"))
+            loggedCount = store.count
             pruneExpiredEvents()
             restorePause()
             recordLeftoverEventsAsLogged()
@@ -166,10 +180,11 @@ internal class EventPipeline(
         return Closeable { submit { debugListeners.remove(token) } }
     }
 
-    /** Forgets the events recorded as sent. */
+    /** Forgets the events recorded as sent and the requests recorded as finished. */
     fun clearDebugHistory() {
         submit {
             sentHistory.clear()
+            requestHistory.clear()
             debugStateDidChange()
         }
     }
@@ -182,6 +197,7 @@ internal class EventPipeline(
             Log.e(TAG, "Failed to store event", exception)
             return
         }
+        loggedCount += 1
         recordActivity(logged = 1, atMillis = storedRecord.timestampMillis)
         recordSessionEvent(session.id, storedRecord.timestampMillis)
         debugStateDidChange()
@@ -247,11 +263,10 @@ internal class EventPipeline(
             val delivery = nextDelivery() ?: break
             inFlight += delivery.fileNames
             running += 1
-            val request = requestBuilder.request(delivery.session, delivery.events)
             try {
                 network.execute {
-                    val outcome = transport.deliver(request)
-                    submit { finish(delivery, outcome) }
+                    val (outcome, request) = send(delivery)
+                    submit { finish(delivery, outcome, request) }
                 }
             } catch (_: RejectedExecutionException) {
                 // Closed, so nothing more is sent.
@@ -263,9 +278,46 @@ internal class EventPipeline(
         if (running == 0) finishDrain()
     }
 
-    private fun finish(delivery: Delivery, outcome: DeliveryOutcome) {
+    /**
+     * Builds and sends [delivery]'s request, returning what the result means for its events and, if
+     * the request was sent and the debug history keeps requests, a record of it.
+     */
+    private fun send(delivery: Delivery): Pair<DeliveryOutcome, DavyDebugSnapshot.Request?> {
+        val sentAt = now()
+        val request = try {
+            requestBuilder.request(delivery.session, delivery.events, sentAt)
+        } catch (exception: IllegalArgumentException) {
+            return DeliveryOutcome.Failed("Couldn't build request: ${exception.message}") to null
+        }
+        val start = System.nanoTime()
+        val result = transport.deliver(request)
+        val durationMillis = (System.nanoTime() - start) / 1_000_000
+        if (configuration.debugHistoryLimit <= 0) return result.outcome to null
+
+        val record = DavyDebugSnapshot.Request(
+            id = UUID.randomUUID(),
+            method = request.method,
+            url = request.url,
+            headers = request.headers.toMap(),
+            body = request.body?.decodeToString(),
+            eventIds = delivery.events.map { it.id },
+            sentAtMillis = sentAt,
+            durationMillis = durationMillis,
+            statusCode = result.statusCode,
+            outcome = when (val outcome = result.outcome) {
+                DeliveryOutcome.Delivered -> DavyDebugSnapshot.Request.Outcome.Delivered
+                is DeliveryOutcome.Rejected -> DavyDebugSnapshot.Request.Outcome.Rejected
+                is DeliveryOutcome.Throttled -> DavyDebugSnapshot.Request.Outcome.Throttled(outcome.retryAfterSeconds)
+                is DeliveryOutcome.Failed -> DavyDebugSnapshot.Request.Outcome.Failed(outcome.reason)
+            },
+        )
+        return result.outcome to record
+    }
+
+    private fun finish(delivery: Delivery, outcome: DeliveryOutcome, request: DavyDebugSnapshot.Request?) {
         running -= 1
         inFlight -= delivery.fileNames.toSet()
+        request?.let(::recordRequest)
         when (outcome) {
             DeliveryOutcome.Delivered -> {
                 store.remove(delivery.stored)
@@ -340,7 +392,7 @@ internal class EventPipeline(
         }
         if (undecodable.isNotEmpty()) {
             Log.e(TAG, "Discarding ${undecodable.size} undecodable event(s)")
-            store.remove(undecodable)
+            store.discard(undecodable)
         }
         return decoded
     }
@@ -408,6 +460,7 @@ internal class EventPipeline(
     private fun recordSent(delivery: Delivery, outcome: DavyDebugSnapshot.SentEvent.Outcome) {
         lastFailure = null
         val sentAt = now()
+        sentCount += delivery.events.size
         recordActivity(sent = delivery.events.size, atMillis = sentAt)
         delivery.events.forEach { recordSessionEvent(delivery.session.id, it.timestampMillis) }
         val limit = configuration.debugHistoryLimit
@@ -422,6 +475,12 @@ internal class EventPipeline(
 
     private fun recordFailure(reason: String) {
         lastFailure = DavyDebugSnapshot.Failure(reason, now())
+        debugStateDidChange()
+    }
+
+    private fun recordRequest(request: DavyDebugSnapshot.Request) {
+        requestHistory.addLast(request)
+        while (requestHistory.size > configuration.debugHistoryLimit) requestHistory.removeFirst()
         debugStateDidChange()
     }
 
@@ -461,16 +520,20 @@ internal class EventPipeline(
         if (start == null || loggedAtMillis < start) sessionStarts[sessionId] = loggedAtMillis
     }
 
-    /** Every pending event read back from disk, with the sent history, last failure, activity, and session starts. */
+    /**
+     * Every pending event read back from disk, discarding any that can't be decoded so the counts
+     * add up, with the sent history, requests, last failure, counts, activity, and session starts.
+     */
     private fun debugSnapshot(): DavyDebugSnapshot {
-        val pending = store.oldest(store.count).mapNotNull { stored ->
-            DavyJson.parsePendingEvent(stored.data.decodeToString())?.let { (session, event) -> DavyDebugSnapshot.LoggedEvent(event, session) }
-        }
+        val pending = decode(store.oldest(store.count)).map { DavyDebugSnapshot.LoggedEvent(it.event, it.session) }
         pending.forEach { recordSessionEvent(it.sessionId, it.timestampMillis) }
         val activityStart = DavyDebugSnapshot.activityStart(now())
         return DavyDebugSnapshot(
             pending = pending,
             sent = sentHistory.toList(),
+            requests = requestHistory.toList(),
+            loggedCount = loggedCount - store.discardedCount,
+            sentCount = sentCount,
             lastFailure = lastFailure,
             activity = activity.filter { it.minuteMillis >= activityStart },
             sessionStarts = sessionStarts.filterValues { it >= activityStart }

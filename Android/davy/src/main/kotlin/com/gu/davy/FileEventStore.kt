@@ -22,6 +22,10 @@ internal class FileEventStore(private val directory: File) {
     private val fileNames: MutableList<String>
     private var sequence = 0L
 
+    /** How many events were discarded without being sent because they expired, couldn't be read, or couldn't be decoded. */
+    var discardedCount: Int = 0
+        private set
+
     init {
         if (!directory.isDirectory && !directory.mkdirs()) {
             Log.e(TAG, "Failed to create event directory $directory")
@@ -71,13 +75,19 @@ internal class FileEventStore(private val directory: File) {
         }
         if (unreadable.isNotEmpty()) {
             Log.e(TAG, "Discarding ${unreadable.size} unreadable event file(s)")
-            remove(unreadable)
+            discard(unreadable)
         }
         return events
     }
 
+    /** Deletes events the server responded to. */
     fun remove(events: List<StoredEvent>) {
         remove(events.map { it.fileName })
+    }
+
+    /** Deletes events that can't be sent, such as ones that can't be decoded. */
+    fun discard(events: List<StoredEvent>) {
+        discard(events.map { it.fileName })
     }
 
     /** Deletes events logged before [cutoffMillis]. */
@@ -85,7 +95,13 @@ internal class FileEventStore(private val directory: File) {
         val expired = fileNames.filter { (loggedAt(it) ?: Long.MIN_VALUE) < cutoffMillis }
         if (expired.isEmpty()) return
         Log.i(TAG, "Pruning ${expired.size} expired event(s)")
-        remove(expired)
+        discard(expired)
+    }
+
+    private fun discard(names: Collection<String>) {
+        val count = fileNames.size
+        remove(names)
+        discardedCount += count - fileNames.size
     }
 
     private fun remove(names: Collection<String>) {

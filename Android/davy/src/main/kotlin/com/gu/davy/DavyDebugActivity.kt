@@ -12,6 +12,7 @@ import android.text.Spanned
 import android.text.TextUtils
 import android.text.style.ForegroundColorSpan
 import android.text.style.TypefaceSpan
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.Menu
 import android.view.MenuItem
@@ -40,11 +41,16 @@ import kotlin.math.roundToInt
  * Lists the events a [Davy] instance is waiting to send and the events it has recently sent, so
  * you can check your events during development.
  *
- * The top of the list shows the current session ID, how many events are pending, and how many were
- * logged and sent in the last hour. Below, pending and sent events are listed together, most
+ * The top of the list shows the current session ID, and how many events were logged since launch
+ * and how many of those are pending and sent. Below, pending and sent events are listed together, most
  * recently logged first, with a mark showing whether each has been sent. Select an event to see
  * everything it's sent with, including its JSON. The menu sends pending events now and clears the
- * sent history. If sending fails, the reason is shown at the top; select it to see all of it.
+ * sent history and requests. If sending fails, the reason is shown at the top; select it to see all
+ * of it.
+ *
+ * Select Requests to list the requests that finished, most recent first, with a mark showing how
+ * the server responded to each. Select a request to see its URL, headers, body, and events. An
+ * event's details list the requests that included it.
  *
  * Start it from a debug menu:
  *
@@ -52,8 +58,8 @@ import kotlin.math.roundToInt
  * DavyDebugActivity.start(context, telemetry)
  * ```
  *
- * Events are listed as sent only if they were sent since the instance was created, up to
- * [DavyConfiguration.debugHistoryLimit]. Unlike the Swift client's debug view, it doesn't chart
+ * Events are listed as sent, and requests are listed, only if they were sent since the instance was
+ * created, up to [DavyConfiguration.debugHistoryLimit]. Unlike the Swift client's debug view, it doesn't chart
  * each minute's activity, since Android has no built-in chart; the counts are in
  * [DavyDebugSnapshot.activity]. It's a development tool, so its text is in English and isn't
  * localized.
@@ -66,7 +72,7 @@ public class DavyDebugActivity : Activity() {
     private var render: (DavyDebugSnapshot) -> Unit = {}
     private var clearItem: MenuItem? = null
 
-    /** Text that listed events' names, `info`, or IDs must contain. */
+    /** Text that listed events' names, `info`, or IDs, or listed requests' URLs or bodies, must contain. */
     internal var searchText: String = ""
         set(value) {
             field = value
@@ -84,16 +90,26 @@ public class DavyDebugActivity : Activity() {
     internal var listedEvents: List<DavyDebugSnapshot.LoggedEvent> = emptyList()
         private set
 
+    /** The requests listed, for tests. */
+    internal var listedRequests: List<DavyDebugSnapshot.Request> = emptyList()
+        private set
+
+    /** Whether this screen lists requests rather than events. */
+    private val showsRequests: Boolean get() = intent.getBooleanExtra(EXTRA_REQUESTS, false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         actionBar?.setDisplayHomeAsUpEnabled(true)
         telemetry = intent.getStringExtra(EXTRA_SESSION_ID)?.let(::instance)
         val eventId = intent.getStringExtra(EXTRA_EVENT_ID)
+        val requestId = intent.getStringExtra(EXTRA_REQUEST_ID)
         val failureReason = intent.getStringExtra(EXTRA_FAILURE_REASON)
         when {
             telemetry == null -> showMissingInstance()
             eventId != null -> showEvent(UUID.fromString(eventId))
+            requestId != null -> showRequest(UUID.fromString(requestId))
             failureReason != null -> showFailure(failureReason, intent.getLongExtra(EXTRA_FAILURE_DATE, 0))
+            showsRequests -> showRequests()
             else -> showEvents()
         }
     }
@@ -106,7 +122,7 @@ public class DavyDebugActivity : Activity() {
                 this.snapshot = snapshot
                 render(snapshot)
                 // Rather than invalidating the menu, which would close the search field.
-                clearItem?.isEnabled = snapshot.sent.isNotEmpty()
+                clearItem?.isEnabled = snapshot.hasHistory
             }
         }
     }
@@ -118,9 +134,9 @@ public class DavyDebugActivity : Activity() {
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        if (telemetry == null || intent.hasExtra(EXTRA_EVENT_ID) || intent.hasExtra(EXTRA_FAILURE_REASON)) return false
+        if (telemetry == null || listOf(EXTRA_EVENT_ID, EXTRA_REQUEST_ID, EXTRA_FAILURE_REASON).any(intent::hasExtra)) return false
         val search = SearchView(actionBar?.themedContext ?: this).apply {
-            queryHint = "Name, info, or ID"
+            queryHint = if (showsRequests) "URL or body" else "Name, info, or ID"
             setOnQueryTextListener(
                 object : SearchView.OnQueryTextListener {
                     override fun onQueryTextChange(newText: String): Boolean {
@@ -158,7 +174,7 @@ public class DavyDebugActivity : Activity() {
     }
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
-        menu.findItem(MENU_CLEAR)?.isEnabled = snapshot?.sent?.isNotEmpty() == true
+        menu.findItem(MENU_CLEAR)?.isEnabled = snapshot?.hasHistory == true
         return super.onPrepareOptionsMenu(menu)
     }
 
@@ -203,6 +219,15 @@ public class DavyDebugActivity : Activity() {
             setPadding(0, dp(4), 0, dp(4))
         }
         val failure = vertical(failureHeader, failureReason)
+        val requestsHeader = sectionHeader("Requests")
+        val lastRequest = caption("")
+        val requestsRow = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(4), 0, dp(4))
+            addView(vertical(text("Show Requests"), lastRequest), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(text("›", size = 22f).apply { setTextColor(SECONDARY) })
+            selectable { startActivity(screenIntent().putExtra(EXTRA_REQUESTS, true)) }
+        }
         val eventsHeader = sectionHeader("Events")
         val filter = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
@@ -229,18 +254,20 @@ public class DavyDebugActivity : Activity() {
             field("Session ID", sessionId),
             LinearLayout(this).apply {
                 setPadding(0, dp(12), 0, 0)
-                listOf(pending to "Pending", logged to "Logged", sent to "Sent").forEach { (value, title) ->
+                listOf(logged to "Logged", pending to "Pending", sent to "Sent").forEach { (value, title) ->
                     addView(vertical(value, caption(title)), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                 }
             },
-            caption("Logged and sent cover the last hour, including events left over from earlier launches."),
+            caption("Since launch, including events left over from earlier launches. Every logged event is pending or sent."),
             failure,
+            requestsHeader,
+            requestsRow,
             eventsHeader,
             filter,
         ).apply { setPadding(dp(16), 0, dp(16), dp(8)) }
         val footer = vertical(note).apply { setPadding(dp(16), dp(8), dp(16), dp(24)) }
 
-        val adapter = EventsAdapter()
+        val adapter = RowsAdapter<DebugEventItem>(::bind)
         val list = ListView(this).apply {
             fitsSystemWindows = true
             clipToPadding = false
@@ -259,9 +286,9 @@ public class DavyDebugActivity : Activity() {
             val listed = items.filter { eventFilter.includes(it) && it.matches(searchText) }
             listedEvents = listed.map { it.event }
             adapter.items = listed
+            logged.text = snapshot.loggedCount.toString()
             pending.text = snapshot.pending.size.toString()
-            logged.text = snapshot.activity.sumOf { it.logged }.toString()
-            sent.text = snapshot.activity.sumOf { it.sent }.toString()
+            sent.text = snapshot.sentCount.toString()
             val lastFailure = snapshot.lastFailure
             failure.visibility = if (lastFailure == null) View.GONE else View.VISIBLE
             if (lastFailure != null) {
@@ -279,6 +306,13 @@ public class DavyDebugActivity : Activity() {
             eventsHeader.text = "Events ($count)".uppercase(Locale.ROOT)
             filter.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
             val limit = telemetry.configuration.debugHistoryLimit
+            requestsHeader.text = "Requests (${snapshot.requests.size})".uppercase(Locale.ROOT)
+            val last = snapshot.requests.lastOrNull()
+            lastRequest.text = when {
+                last != null -> "Last: ${last.statusTitle} at ${time(last.sentAtMillis)}"
+                limit > 0 -> "None yet."
+                else -> "Not kept because debugHistoryLimit is 0."
+            }
             note.text = when {
                 items.isEmpty() && limit > 0 -> "No events. Logged events are listed here, and stay listed once sent until the app quits."
                 items.isEmpty() -> "No events. Logged events are listed here until they're sent."
@@ -308,18 +342,29 @@ public class DavyDebugActivity : Activity() {
                 content.addView(caption("This event is no longer listed."))
             } else {
                 title = shown.name
-                addEventDetail(content, shown, items.firstOrNull { it.event.id == id }?.status ?: DebugEventStatus.Unknown)
+                val status = items.firstOrNull { it.event.id == id }?.status ?: DebugEventStatus.Unknown
+                addEventDetail(content, shown, status, snapshot.requestsContaining(id))
             }
         }
     }
 
-    private fun addEventDetail(content: LinearLayout, event: DavyDebugSnapshot.LoggedEvent, status: DebugEventStatus) {
+    private fun addEventDetail(
+        content: LinearLayout,
+        event: DavyDebugSnapshot.LoggedEvent,
+        status: DebugEventStatus,
+        requests: List<DavyDebugSnapshot.Request>,
+    ) {
         content.addView(sectionHeader("Event"))
         content.addView(field("Name", monospace(event.name)))
         content.addView(field("Type", text(if (event.isError) "Error" else "Breadcrumb")))
         content.addView(field("ID", monospace(DavyJson.uuid(event.id))))
         content.addView(field("Logged", text(FULL_TIME.get()!!.format(Date(event.timestampMillis)))))
         content.addView(field("Status", statusText(status)))
+
+        if (requests.isNotEmpty()) {
+            content.addView(sectionHeader("Requests"))
+            requests.forEach { content.addView(requestRow(it)) }
+        }
 
         content.addView(sectionHeader("Info"))
         if (event.info.isEmpty()) {
@@ -356,8 +401,136 @@ public class DavyDebugActivity : Activity() {
         )
     }
 
-    private inner class EventsAdapter : BaseAdapter() {
-        var items: List<DebugEventItem> = emptyList()
+    private fun showRequests() {
+        val telemetry = telemetry ?: return
+        title = "Requests"
+        val requestsHeader = sectionHeader("Requests")
+        val note = caption("")
+        val header = vertical(requestsHeader).apply { setPadding(dp(16), 0, dp(16), dp(8)) }
+        val footer = vertical(note).apply { setPadding(dp(16), dp(8), dp(16), dp(24)) }
+
+        val adapter = RowsAdapter<DavyDebugSnapshot.Request>(::bind)
+        val list = ListView(this).apply {
+            fitsSystemWindows = true
+            clipToPadding = false
+            addHeaderView(header, null, false)
+            addFooterView(footer, null, false)
+            this.adapter = adapter
+            setOnItemClickListener { parent, _, position, _ ->
+                val request = parent.getItemAtPosition(position) as? DavyDebugSnapshot.Request ?: return@setOnItemClickListener
+                startActivity(screenIntent().putExtra(EXTRA_REQUEST_ID, request.id.toString()))
+            }
+        }
+        setContentView(list)
+
+        render = { snapshot ->
+            val requests = snapshot.requestsNewestFirst()
+            val listed = requests.filter { it.matches(searchText) }
+            listedRequests = listed
+            adapter.items = listed
+            val count = if (listed.size == requests.size) "${requests.size}" else "${listed.size} of ${requests.size}"
+            requestsHeader.text = "Requests ($count)".uppercase(Locale.ROOT)
+            val limit = telemetry.configuration.debugHistoryLimit
+            note.text = when {
+                limit <= 0 -> "Requests aren't kept because debugHistoryLimit is 0."
+                requests.isEmpty() -> "Requests are listed here once they finish, until the app quits, up to $limit."
+                listed.isEmpty() -> "No requests match the search."
+                else -> "Requests are kept until the app quits, up to $limit."
+            }
+        }
+    }
+
+    private fun showRequest(id: UUID) {
+        val content = vertical()
+        setContentView(ScrollView(this).apply {
+            fitsSystemWindows = true
+            addView(content)
+        })
+        content.setPadding(dp(16), 0, dp(16), dp(24))
+        var request: DavyDebugSnapshot.Request? = null
+        var shownState: List<Any?>? = null
+
+        render = { snapshot ->
+            request = request ?: snapshot.requests.firstOrNull { it.id == id }
+            val shown = request
+            val items = DebugEventItem.all(snapshot).associateBy { it.event.id }
+            val events = shown?.eventIds.orEmpty().map(items::get)
+            // Rebuilt only when what's shown changes, so selecting the body's text isn't interrupted.
+            val state = listOf<Any?>(shown) + events.map { it?.status }
+            if (state != shownState) {
+                shownState = state
+                content.removeAllViews()
+                if (shown == null) {
+                    title = "Request"
+                    content.addView(caption("This request is no longer listed."))
+                } else {
+                    title = shown.methodAndPath
+                    addRequestDetail(content, shown, events)
+                }
+            }
+        }
+    }
+
+    /** [request]'s details, with [events], the request's events in order, or `null` for any no longer listed. */
+    private fun addRequestDetail(content: LinearLayout, request: DavyDebugSnapshot.Request, events: List<DebugEventItem?>) {
+        content.addView(sectionHeader("Summary"))
+        content.addView(field("Method", monospace(request.method)))
+        content.addView(field("URL", monospace(request.url)))
+        content.addView(field("Sent At", text(FULL_TIME.get()!!.format(Date(request.sentAtMillis)))))
+        content.addView(field("Duration", text("${request.durationMillis} ms")))
+        content.addView(field("Status Code", text(request.statusCode?.toString() ?: "No response")))
+        val outcome = text(request.outcome.description)
+        if (request.outcome != DavyDebugSnapshot.Request.Outcome.Delivered) outcome.setTextColor(outcomeMark(request.outcome).second)
+        content.addView(field("Outcome", outcome))
+
+        val failure = request.outcome as? DavyDebugSnapshot.Request.Outcome.Failed
+        if (failure != null) {
+            content.addView(sectionHeader("Reason"))
+            content.addView(text(failure.reason, size = 12f, monospace = true, selectable = true))
+        }
+
+        content.addView(sectionHeader("Events (${request.eventIds.size})"))
+        request.eventIds.zip(events).forEach { (eventId, item) ->
+            if (item == null) {
+                content.addView(field("No longer listed", monospace(DavyJson.uuid(eventId))))
+            } else {
+                content.addView(
+                    listRow().apply {
+                        bind(tag as RowViews, item)
+                        selectable { startActivity(screenIntent().putExtra(EXTRA_EVENT_ID, eventId.toString())) }
+                    },
+                )
+            }
+        }
+
+        content.addView(sectionHeader("Headers"))
+        if (request.headers.isEmpty()) {
+            content.addView(caption("None"))
+        } else {
+            request.headers.entries.sortedBy { it.key.lowercase(Locale.ROOT) }.forEach { (name, value) ->
+                content.addView(monospace("$name: $value").apply { setPadding(0, dp(4), 0, dp(4)) })
+            }
+        }
+
+        val query = request.queryParameters
+        if (query.isNotEmpty()) {
+            content.addView(sectionHeader("Query"))
+            query.forEach { (name, value) -> content.addView(field(name, monospace(value))) }
+        }
+
+        content.addView(sectionHeader("Body"))
+        val body = request.prettyBody
+        if (body == null) {
+            content.addView(caption("None. Query string requests have no body."))
+        } else {
+            content.addView(text(body, size = 12f, monospace = true, selectable = true))
+            content.addView(shareButton("Share Body", body))
+        }
+    }
+
+    /** A list of rows built with [listRow], each showing an item with [bind]. */
+    private inner class RowsAdapter<T : Any>(private val bind: (RowViews, T) -> Unit) : BaseAdapter() {
+        var items: List<T> = emptyList()
             set(value) {
                 field = value
                 notifyDataSetChanged()
@@ -370,16 +543,16 @@ public class DavyDebugActivity : Activity() {
         override fun getItemId(position: Int) = position.toLong()
 
         override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-            val row = convertView ?: eventRow()
-            bind(row.tag as EventRowViews, items[position])
+            val row = convertView ?: listRow()
+            bind(row.tag as RowViews, items[position])
             return row
         }
     }
 
-    private class EventRowViews(val mark: TextView, val name: TextView, val details: TextView)
+    private class RowViews(val mark: TextView, val name: TextView, val details: TextView)
 
-    /** An event in the list: a mark showing its status, its name, and when it was logged. */
-    private fun eventRow(): View {
+    /** An event or request in a list: a mark showing its status, its name, and details. */
+    private fun listRow(): View {
         val mark = text("", size = 18f, bold = true).apply {
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(dp(32), ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -391,11 +564,11 @@ public class DavyDebugActivity : Activity() {
             setPadding(dp(8), dp(10), dp(16), dp(10))
             addView(mark)
             addView(vertical(name, details))
-            tag = EventRowViews(mark, name, details)
+            tag = RowViews(mark, name, details)
         }
     }
 
-    private fun bind(views: EventRowViews, item: DebugEventItem) {
+    private fun bind(views: RowViews, item: DebugEventItem) {
         val (symbol, color, description) = when (val status = item.status) {
             DebugEventStatus.Pending -> Triple("○", WARNING, "Pending")
             is DebugEventStatus.Sent -> if (status.outcome is DavyDebugSnapshot.SentEvent.Outcome.Rejected) {
@@ -420,6 +593,38 @@ public class DavyDebugActivity : Activity() {
         }
     }
 
+    private fun bind(views: RowViews, request: DavyDebugSnapshot.Request) {
+        val (symbol, color, description) = outcomeMark(request.outcome)
+        views.mark.text = symbol
+        views.mark.setTextColor(color)
+        views.mark.contentDescription = description
+        views.name.text = request.methodAndPath
+        views.details.text = SpannableStringBuilder().apply {
+            if (request.outcome == DavyDebugSnapshot.Request.Outcome.Delivered) {
+                append(request.statusTitle)
+            } else {
+                append(request.statusTitle, ForegroundColorSpan(color), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            append("  ").append(time(request.sentAtMillis))
+            append("  ").append(request.eventCountTitle)
+            append("  ").append("${request.durationMillis} ms")
+        }
+    }
+
+    /** A row showing [request] that opens its details. */
+    private fun requestRow(request: DavyDebugSnapshot.Request): View = listRow().apply {
+        bind(tag as RowViews, request)
+        selectable { startActivity(screenIntent().putExtra(EXTRA_REQUEST_ID, request.id.toString())) }
+    }
+
+    /** The mark, its color, and a description of it for accessibility. */
+    private fun outcomeMark(outcome: DavyDebugSnapshot.Request.Outcome): Triple<String, Int, String> = when (outcome) {
+        DavyDebugSnapshot.Request.Outcome.Delivered -> Triple("✓", SENT, "Delivered")
+        DavyDebugSnapshot.Request.Outcome.Rejected -> Triple("✕", ERROR, "Rejected")
+        is DavyDebugSnapshot.Request.Outcome.Throttled -> Triple("‖", WARNING, "Throttled")
+        is DavyDebugSnapshot.Request.Outcome.Failed -> Triple("⚠", WARNING, "Failed")
+    }
+
     private fun statusText(status: DebugEventStatus): TextView = when (status) {
         DebugEventStatus.Pending -> text("Pending")
         is DebugEventStatus.Sent -> when (val outcome = status.outcome) {
@@ -431,6 +636,17 @@ public class DavyDebugActivity : Activity() {
     }
 
     private fun screenIntent() = Intent(this, DavyDebugActivity::class.java).putExtra(EXTRA_SESSION_ID, intent.getStringExtra(EXTRA_SESSION_ID))
+
+    /** Makes the view show a highlight when touched, and calls [onSelect] when it's selected. */
+    private fun View.selectable(onSelect: () -> Unit) {
+        val background = TypedValue()
+        if (context.theme.resolveAttribute(android.R.attr.selectableItemBackground, background, true)) {
+            setBackgroundResource(background.resourceId)
+        }
+        setOnClickListener { onSelect() }
+    }
+
+    private val DavyDebugSnapshot.hasHistory: Boolean get() = sent.isNotEmpty() || requests.isNotEmpty()
 
     private fun shareButton(title: String, value: String) = Button(this).apply {
         text = title
@@ -487,6 +703,8 @@ public class DavyDebugActivity : Activity() {
     public companion object {
         private const val EXTRA_SESSION_ID = "com.gu.davy.debug.SESSION_ID"
         private const val EXTRA_EVENT_ID = "com.gu.davy.debug.EVENT_ID"
+        private const val EXTRA_REQUESTS = "com.gu.davy.debug.REQUESTS"
+        private const val EXTRA_REQUEST_ID = "com.gu.davy.debug.REQUEST_ID"
         private const val EXTRA_FAILURE_REASON = "com.gu.davy.debug.FAILURE_REASON"
         private const val EXTRA_FAILURE_DATE = "com.gu.davy.debug.FAILURE_DATE"
         private const val MENU_SEARCH = 1

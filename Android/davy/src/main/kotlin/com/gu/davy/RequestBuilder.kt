@@ -25,19 +25,23 @@ internal class RequestBuilder(
     )
 
     /**
-     * Builds a request delivering [events], all logged in [session]. A [RequestFormat.QueryString]
+     * Builds a request delivering [events], all logged in [session], stamped with [sentAtMillis], the
+     * device's time when it's sent. A [RequestFormat.JsonEvent] or [RequestFormat.QueryString]
      * request carries exactly one event.
      */
-    fun request(session: Session, events: List<EventRecord>): HttpRequest {
+    fun request(session: Session, events: List<EventRecord>, sentAtMillis: Long): HttpRequest {
         val fields = linkedMapOf<String, String>()
         val (method, url, body) = when (format) {
-            RequestFormat.JsonBatch -> {
+            RequestFormat.JsonBatch, is RequestFormat.JsonEvent -> {
+                if (format is RequestFormat.JsonEvent) {
+                    require(events.size == 1) { "A JSON event request carries exactly one event, not ${events.size}" }
+                }
                 fields["Content-Type"] = "application/json"
-                Triple("POST", endpoint.toString(), DavyJson.payload(session, events).toByteArray())
+                Triple("POST", endpoint.toString(), DavyJson.payload(session, events, sentAtMillis).toByteArray())
             }
             is RequestFormat.QueryString -> {
                 require(events.size == 1) { "A query string request carries exactly one event, not ${events.size}" }
-                Triple(format.method.name, queryStringUrl(session, events.single()), null)
+                Triple(format.method.name, queryStringUrl(session, events.single(), sentAtMillis), null)
             }
         }
         for ((field, value) in headers) {
@@ -50,20 +54,23 @@ internal class RequestBuilder(
 
     /**
      * The size of [event] in bytes: the length of the URL it's sent to with
-     * [RequestFormat.QueryString], whatever the configured format.
+     * [RequestFormat.QueryString], whatever the configured format. `sentAt` is always the same
+     * length, so any time will do.
      */
-    fun size(event: EventRecord, session: Session): Int = queryStringUrl(session, event).toByteArray().size
+    fun size(event: EventRecord, session: Session): Int =
+        queryStringUrl(session, event, System.currentTimeMillis()).toByteArray().size
 
     /**
-     * `<endpoint>/<name>?eventId=…&type=…&timestamp=…&sessionId=…`, keeping any query items already
-     * in the endpoint. Parameters whose value is `null` are omitted.
+     * `<endpoint>/<name>?eventId=…&type=…&timestamp=…&sentAt=…&sessionId=…`, keeping any query items
+     * already in the endpoint. Parameters whose value is `null` are omitted.
      */
-    private fun queryStringUrl(session: Session, event: EventRecord): String {
+    private fun queryStringUrl(session: Session, event: EventRecord, sentAtMillis: Long): String {
         val path = endpoint.rawPath.orEmpty().let { if (it.endsWith("/")) it else "$it/" } + percentEncoded(event.name)
         val parameters = listOf(
             "eventId" to DavyJson.uuid(event.id),
             "type" to event.type.wireName,
             "timestamp" to DavyJson.timestamp(event.timestampMillis),
+            "sentAt" to DavyJson.timestamp(sentAtMillis),
             "sessionId" to DavyJson.uuid(session.id),
             "environment" to session.environment,
             "appVersion" to session.appVersion,

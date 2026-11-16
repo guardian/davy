@@ -9,10 +9,12 @@ info:
     client for Apple platforms and the Kotlin client for Android implement it, and their tests check
     their requests against it and against the shared examples in `fixtures.json`.
 
-    An app uses one of two request formats, set by `DavyConfiguration.format`:
+    An app uses one of three request formats, set by `DavyConfiguration.format`:
 
     - **JSON batch** (the default): a `POST` to the endpoint with up to `batchSize` events from a
       single session as a JSON body.
+    - **JSON event**: one request per event, a `POST` to the endpoint with the same JSON body as a
+      batch containing exactly one event, so the same endpoint handles both.
     - **Query string**: one request per event with an empty body, the event's name appended to the
       endpoint's path, and every other field as a query parameter. `POST` (the default) or `GET`.
 
@@ -28,8 +30,11 @@ info:
       (default 2,048), whichever format is used. A larger event is replaced with the error
       `davy_event_too_large`.
     - Delivery is at least once, so the same event can arrive more than once with the same ID.
-    - `timestamp` comes from the device's clock, which can be wrong. Events can arrive up to
-      `maxEventAge` (default 30 days) after they were logged.
+    - `timestamp` and `sentAt` come from the device's clock, which can be wrong. `sentAt` is set
+      each time a request is sent, so a retry has a later `sentAt` than the attempt before it. If
+      the clock is off, compare `sentAt` with when the server received the request to estimate by
+      how much, and shift `timestamp` by the same amount. Events can arrive up to `maxEventAge`
+      (default 30 days) after they were logged.
 
     The schemas are strict so clients can be checked against them. Servers should be lenient and
     ignore fields they don't recognize, since a client discards the events in any request rejected
@@ -45,7 +50,9 @@ servers:
 security: []
 tags:
   - name: JSON batch
-    description: Events sent in batches as a JSON body, with `DavyConfiguration.RequestFormat.jsonBatch`.
+    description: |
+      Events sent as a JSON body: in batches with `DavyConfiguration.RequestFormat.jsonBatch`, or one
+      per request with `DavyConfiguration.RequestFormat.jsonEvent(maxConcurrentRequests:)`.
   - name: Query string
     description: |
       One event per request with every field in the URL, for servers that can log fields from the
@@ -60,6 +67,9 @@ paths:
         Sent to the endpoint itself, without adding a trailing slash. Contains between 1 and
         `batchSize` (default 100) events, oldest first, all logged in the same session. One request
         is in flight at a time.
+
+        In the JSON event format, each request contains exactly one event, and up to
+        `maxConcurrentRequests` (default 4) are in flight at once, so events can arrive out of order.
       requestBody:
         required: true
         content:
@@ -67,6 +77,7 @@ paths:
             schema:
               $ref: '#/components/schemas/Batch'
             example:
+              sentAt: '2026-11-09T11:39:00.250Z'
               session:
                 id: 6F9619FF-8B86-D011-B42D-00C04FC964FF
                 environment: production
@@ -117,6 +128,7 @@ paths:
       - $ref: '#/components/parameters/EventId'
       - $ref: '#/components/parameters/Type'
       - $ref: '#/components/parameters/Timestamp'
+      - $ref: '#/components/parameters/SentAt'
       - $ref: '#/components/parameters/SessionId'
       - $ref: '#/components/parameters/Environment'
       - $ref: '#/components/parameters/AppVersion'
@@ -185,9 +197,11 @@ components:
     Batch:
       type: object
       description: The body of a JSON batch request.
-      required: [session, events]
+      required: [sentAt, session, events]
       additionalProperties: false
       properties:
+        sentAt:
+          $ref: '#/components/schemas/SentAt'
         session:
           $ref: '#/components/schemas/Session'
         events:
@@ -308,6 +322,16 @@ components:
       description: When the event was logged, by the device's clock, as ISO 8601 in UTC with milliseconds.
       pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$'
       examples: ['2026-11-09T11:38:57.112Z']
+    SentAt:
+      type: string
+      format: date-time
+      description: |
+        When the request was sent, by the device's clock, in the same format as `timestamp`. Set
+        again for every attempt, so it's the same for every event in a request but differs between
+        retries. Compare it with when the server received the request to see how far the device's
+        clock is from the server's.
+      pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$'
+      examples: ['2026-11-09T11:39:00.250Z']
     Environment:
       type: string
       description: |
@@ -377,6 +401,12 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/Timestamp'
+    SentAt:
+      name: sentAt
+      in: query
+      required: true
+      schema:
+        $ref: '#/components/schemas/SentAt'
     SessionId:
       name: sessionId
       in: query

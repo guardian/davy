@@ -20,6 +20,9 @@ struct FileEventStore {
     /// Pending file names, oldest first.
     private var fileNames: [String]
     private var sequence: UInt64 = 0
+    /// How many events were discarded without being sent because they expired, couldn't be
+    /// read, or couldn't be decoded.
+    private(set) var discardedCount = 0
 
     init(directory: URL) {
         self.directory = directory
@@ -66,13 +69,19 @@ struct FileEventStore {
         }
         if !unreadable.isEmpty {
             Self.logger.error("Discarding \(unreadable.count) unreadable event file(s)")
-            remove(fileNames: unreadable)
+            discard(fileNames: unreadable)
         }
         return events
     }
 
+    /// Deletes events the server responded to.
     mutating func remove(_ events: [StoredEvent]) {
         remove(fileNames: events.map(\.fileName))
+    }
+
+    /// Deletes events that can't be sent, such as ones that can't be decoded.
+    mutating func discard(_ events: [StoredEvent]) {
+        discard(fileNames: events.map(\.fileName))
     }
 
     /// Deletes events logged before `cutoff`.
@@ -80,7 +89,13 @@ struct FileEventStore {
         let expired = fileNames.filter { (Self.loggedAt(of: $0) ?? .distantPast) < cutoff }
         guard !expired.isEmpty else { return }
         Self.logger.info("Pruning \(expired.count) expired event(s)")
-        remove(fileNames: expired)
+        discard(fileNames: expired)
+    }
+
+    private mutating func discard(fileNames names: [String]) {
+        let count = fileNames.count
+        remove(fileNames: names)
+        discardedCount += count - fileNames.count
     }
 
     private mutating func remove(fileNames names: [String]) {

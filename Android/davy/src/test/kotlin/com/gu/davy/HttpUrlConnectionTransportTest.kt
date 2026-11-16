@@ -94,9 +94,10 @@ class HttpUrlConnectionTransportTest {
         val server = server("HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
         val path = "/events/checkout_started?eventId=1B4E28BA-2FA1-11D2-883F-0016D3CCA427&info=%7B%22a%22%3A%22b%2Bc%22%7D"
 
-        val outcome = HttpUrlConnectionTransport().deliver(HttpRequest("GET", server.url + path, emptyMap(), null))
+        val result = HttpUrlConnectionTransport().deliver(HttpRequest("GET", server.url + path, emptyMap(), null))
 
-        assertEquals(DeliveryOutcome.Delivered, outcome)
+        assertEquals(204, result.statusCode)
+        assertEquals(DeliveryOutcome.Delivered, result.outcome)
         val received = server.received.poll(5, TimeUnit.SECONDS)!!
         // Sent exactly as built, without decoding or re-encoding the query.
         assertEquals("GET $path HTTP/1.1", received.requestLine)
@@ -108,8 +109,9 @@ class HttpUrlConnectionTransportTest {
     fun noResponseIsAFailure() {
         val port = ServerSocket(0).use { it.localPort }
 
-        val outcome = HttpUrlConnectionTransport().deliver(HttpRequest("POST", "http://127.0.0.1:$port/events", emptyMap(), ByteArray(0)))
+        val result = HttpUrlConnectionTransport().deliver(HttpRequest("POST", "http://127.0.0.1:$port/events", emptyMap(), ByteArray(0)))
 
-        assertTrue(outcome.toString(), outcome is DeliveryOutcome.Failed)
+        assertNull(result.statusCode)
+        assertTrue(result.outcome.toString(), result.outcome is DeliveryOutcome.Failed)
     }
 }

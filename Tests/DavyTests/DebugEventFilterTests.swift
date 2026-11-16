@@ -26,6 +26,9 @@ struct DebugEventFilterTests {
                 DavyDebugSnapshot.SentEvent(event: delivered, sentAt: Date(timeIntervalSince1970: 5), outcome: .delivered),
                 DavyDebugSnapshot.SentEvent(event: rejected, sentAt: Date(timeIntervalSince1970: 6), outcome: .rejected(statusCode: 400)),
             ],
+            requests: [],
+            loggedCount: 3,
+            sentCount: 2,
             lastFailure: nil,
             activity: [],
             sessionStarts: []
@@ -45,7 +48,16 @@ struct DebugEventFilterTests {
     @Test func eventsLoggedAtTheSameTimeAreListedMostRecentlyLoggedFirst() {
         let first = loggedEvent(.breadcrumb("first"), at: 1, session: session)
         let second = loggedEvent(.breadcrumb("second"), at: 1, session: session)
-        let sameTime = DavyDebugSnapshot(pending: [first, second], sent: [], lastFailure: nil, activity: [], sessionStarts: [])
+        let sameTime = DavyDebugSnapshot(
+            pending: [first, second],
+            sent: [],
+            requests: [],
+            loggedCount: 2,
+            sentCount: 0,
+            lastFailure: nil,
+            activity: [],
+            sessionStarts: []
+        )
 
         #expect(DebugEventItem.all(in: sameTime).map(\.event.name) == ["second", "first"])
     }
@@ -72,6 +84,51 @@ struct DebugEventFilterTests {
         #expect(DebugEventFilter.all.noMatchesDescription(searchText: "refund") == "No events match the search.")
         #expect(DebugEventFilter.sent.noMatchesDescription(searchText: "refund") == "No events match the search and filter.")
     }
+
+    @Test func requestSearchMatchesTheDecodedURLOrBodyIgnoringCase() throws {
+        let queryString = request(
+            url: "https://api.example.com/events/checkout_started?type=breadcrumb&info=%7B%22step%22%3A%22Cart%22%7D",
+            body: nil
+        )
+        let batch = request(url: "https://api.example.com/events", body: #"{"events":[{"name":"payment_declined"}]}"#)
+
+        let matching = { (text: String) in [queryString, batch].filter { $0.matches(searchText: text) }.map(\.url) }
+        #expect(matching("  ") == [queryString.url, batch.url])
+        #expect(matching(#""step":"cart""#) == [queryString.url])
+        #expect(matching("PAYMENT_DECLINED") == [batch.url])
+        #expect(matching("refund").isEmpty)
+    }
+
+    @Test func requestBodiesAreShownIndentedWithSortedKeys() {
+        let json = request(url: "https://api.example.com/events", body: #"{"session":{"id":"a/b"},"name":"x"}"#)
+        #expect(json.prettyBody == """
+            {
+              "name" : "x",
+              "session" : {
+                "id" : "a/b"
+              }
+            }
+            """)
+        #expect(request(url: "https://api.example.com/events", body: "not json").prettyBody == "not json")
+        #expect(request(url: "https://api.example.com/events/a", body: nil).prettyBody == nil)
+        #expect(request(url: "https://api.example.com/events/a", body: nil, statusCode: nil).statusTitle == "No response")
+        #expect(json.statusTitle == "HTTP 200")
+    }
+}
+
+private func request(url: String, body: String?, statusCode: Int? = 200) -> DavyDebugSnapshot.Request {
+    DavyDebugSnapshot.Request(
+        id: UUID(),
+        method: "POST",
+        url: URL(string: url)!,
+        headers: [:],
+        body: body,
+        eventIDs: [UUID()],
+        sentAt: Date(timeIntervalSince1970: 1),
+        duration: 0.1,
+        statusCode: statusCode,
+        outcome: .delivered
+    )
 }
 
 private func loggedEvent(

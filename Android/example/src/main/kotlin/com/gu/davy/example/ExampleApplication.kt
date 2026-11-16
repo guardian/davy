@@ -26,11 +26,20 @@ class ExampleApplication : Application() {
      * spelled out here to show what can be configured.
      */
     private fun configuration() = DavyConfiguration(
-        // Replace with your own endpoint.
-        endpoint = URI("https://api.example.com/events"),
+        // Debug builds send to the test server in `TestServer/`, running on this computer; see
+        // docs/development.md. Run `adb reverse tcp:8080 tcp:8080` first, so the emulator or
+        // device reaches it at localhost.
+        endpoint = if (BuildConfig.DEBUG) {
+            URI("http://localhost:8080/events")
+        } else {
+            // Replace with your own endpoint.
+            URI("https://api.example.com/events")
+        },
         // POST batches here as `{ "session": { … }, "events": [ … ] }` (the default). Use
-        // `RequestFormat.QueryString()` instead to send each event as its own request to
-        // `<endpoint>/<name>?eventId=…&type=…&sessionId=…`, for servers that log URLs, not bodies.
+        // `RequestFormat.JsonEvent()` instead to send each event as its own JSON request here,
+        // with the same body as a batch of one, or `RequestFormat.QueryString()` to send each event
+        // as its own request to `<endpoint>/<name>?eventId=…&type=…&sessionId=…`, for servers that
+        // log URLs, not bodies.
         format = RequestFormat.JsonBatch,
         // Lets you separate test data from real usage, for example "beta" for internal test tracks.
         environment = if (BuildConfig.DEBUG) "debug" else "production",

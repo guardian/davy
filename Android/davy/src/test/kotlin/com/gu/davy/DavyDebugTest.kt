@@ -1,13 +1,17 @@
 package com.gu.davy
 
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.hours
 
 /** Ported from the Swift client's debug snapshot tests. */
 class DavyDebugTest {
@@ -119,6 +123,113 @@ class DavyDebugTest {
 
         assertEquals(3, snapshot.pending.size)
         assertEquals(3, snapshot.activity.sumOf { it.logged })
+    }
+
+    @Test
+    fun debugCountsEveryLoggedEventAsPendingOrSent() {
+        val directory = directory()
+        val store = FileEventStore(File(directory, "events"))
+        val session = testSession()
+        val now = System.currentTimeMillis()
+        // Left over from earlier launches: one logged before the last hour, one expired, and one
+        // that can't be decoded. Only the first can be sent, so only it counts as logged.
+        for ((name, loggedAt) in listOf("earlier" to now - 2.hours.inWholeMilliseconds, "expired" to now - 31.days.inWholeMilliseconds)) {
+            store.append(DavyJson.pendingEvent(session, EventRecord.from(Event.Breadcrumb(name), loggedAt)).toByteArray(), loggedAt)
+        }
+        store.append("""{"not":"an event"}""".toByteArray(), now - 60_000)
+
+        val transport = MockTransport().apply { setFailing(true) }
+        val telemetry = makeDavy(directory, transport).tracked()
+        telemetry.log(Event.Breadcrumb("checkout_started"))
+        telemetry.log(Event.Breadcrumb("checkout_finished"))
+        telemetry.flushAndWaitBlocking()
+        val failed = telemetry.debugSnapshotBlocking()
+        assertEquals(3, failed.loggedCount)
+        assertEquals(3, failed.pending.size)
+        assertEquals(0, failed.sentCount)
+
+        transport.respond(400)
+        telemetry.log(Event.Breadcrumb("checkout_abandoned"))
+        telemetry.flushAndWaitBlocking()
+        telemetry.clearDebugHistory()
+        val sent = telemetry.debugSnapshotBlocking()
+        assertEquals(4, sent.loggedCount)
+        assertTrue(sent.pending.isEmpty())
+        assertEquals(4, sent.sentCount)
+    }
+
+    @Test
+    fun debugSnapshotRecordsEachRequestInTheOrderTheyFinished() {
+        val transport = MockTransport().apply { setFailing(true) }
+        val telemetry = makeDavy(directory(), transport, headers = mapOf("Authorization" to "Bearer token")).tracked()
+
+        telemetry.log(Event.Breadcrumb("checkout_started"))
+        telemetry.log(Event.Breadcrumb("checkout_finished"))
+        val pending = telemetry.debugSnapshotBlocking().pending
+        val start = System.currentTimeMillis()
+        telemetry.flushAndWaitBlocking()
+        transport.setFailing(false)
+        telemetry.flushAndWaitBlocking()
+        val end = System.currentTimeMillis()
+        val requests = telemetry.debugSnapshotBlocking().requests
+
+        assertEquals(
+            listOf(DavyDebugSnapshot.Request.Outcome.Failed("HTTP 500"), DavyDebugSnapshot.Request.Outcome.Delivered),
+            requests.map { it.outcome },
+        )
+        assertEquals(listOf(500, 200), requests.map { it.statusCode })
+        assertEquals(2, requests.map { it.id }.toSet().size)
+        assertEquals(transport.requests.map { it.body!!.decodeToString() }, requests.map { it.body })
+        for (request in requests) {
+            assertEquals("POST", request.method)
+            assertEquals("https://example.com/events", request.url)
+            assertEquals(mapOf("Content-Type" to "application/json", "Authorization" to "Bearer token"), request.headers)
+            assertEquals(listOf("checkout_started", "checkout_finished"), JSONObject(request.body!!).getJSONArray("events").objects().map { it.getString("name") })
+            assertEquals(pending.map { it.id }, request.eventIds)
+            assertTrue(request.durationMillis >= 0)
+            assertTrue(request.sentAtMillis in start..end)
+        }
+        assertTrue(requests[0].sentAtMillis <= requests[1].sentAtMillis)
+    }
+
+    @Test
+    fun debugSnapshotRecordsThrottledRejectedAndUnansweredRequests() {
+        val offline = IOException("The Internet connection appears to be offline.")
+        val cases = listOf(
+            Triple(MockTransport().apply { respond(429, mapOf("Retry-After" to "120")) }, 429, DavyDebugSnapshot.Request.Outcome.Throttled(120.0)),
+            Triple(MockTransport().apply { respond(400) }, 400, DavyDebugSnapshot.Request.Outcome.Rejected),
+            Triple(EventTransport { throw offline }, null, DavyDebugSnapshot.Request.Outcome.Failed(offline.toString())),
+        )
+        for ((transport, statusCode, outcome) in cases) {
+            val telemetry = makeDavy(directory(), transport).tracked()
+
+            telemetry.log(Event.Breadcrumb("checkout_started"))
+            telemetry.flushAndWaitBlocking()
+            val request = telemetry.debugSnapshotBlocking().requests.single()
+
+            assertEquals("$outcome", statusCode, request.statusCode)
+            assertEquals(outcome, request.outcome)
+        }
+    }
+
+    @Test
+    fun debugHistoryKeepsOnlyTheMostRecentRequests() {
+        for (limit in listOf(2, 0)) {
+            val transport = MockTransport()
+            val telemetry = makeDavy(
+                directory(),
+                transport,
+                format = RequestFormat.QueryString(maxConcurrentRequests = 1),
+                debugHistoryLimit = limit,
+            ).tracked()
+
+            repeat(3) { telemetry.log(Event.Breadcrumb("event_$it")) }
+            telemetry.flushAndWaitBlocking()
+            assertEquals(transport.requests.takeLast(limit).map { it.url }, telemetry.debugSnapshotBlocking().requests.map { it.url })
+
+            telemetry.clearDebugHistory()
+            assertTrue(telemetry.debugSnapshotBlocking().requests.isEmpty())
+        }
     }
 
     @Test

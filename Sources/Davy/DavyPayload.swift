@@ -1,10 +1,12 @@
 import Foundation
 
-/// The JSON request body: `{ "session": { … }, "events": [ … ] }`.
+/// The JSON request body: `{ "sentAt": "…", "session": { … }, "events": [ … ] }`.
 ///
 /// Every request contains events from a single session, so `session` describes the app and device
-/// exactly as they were when those events were logged.
+/// exactly as they were when those events were logged. `sentAt` is when the request was sent, by
+/// the device's clock.
 struct DavyPayload: Encodable {
+    let sentAt: Date
     let session: Session
     let events: [EventRecord]
 }

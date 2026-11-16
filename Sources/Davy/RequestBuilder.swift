@@ -25,22 +25,27 @@ struct RequestBuilder: Sendable {
         self.format = configuration.format
     }
 
-    /// Builds a request delivering `events`, all logged in `session`. A
+    /// Builds a request delivering `events`, all logged in `session`, stamped with `sentAt`, the
+    /// device's time when it's sent. A
+    /// ``DavyConfiguration/RequestFormat/jsonEvent(maxConcurrentRequests:)`` or
     /// ``DavyConfiguration/RequestFormat/queryString(method:maxConcurrentRequests:)`` request
     /// carries exactly one event.
-    func request(session: Session, events: [EventRecord]) throws -> URLRequest {
+    func request(session: Session, events: [EventRecord], sentAt: Date) throws -> URLRequest {
         var request: URLRequest
         switch format {
-        case .jsonBatch:
+        case .jsonBatch, .jsonEvent:
+            if case .jsonEvent = format, events.count != 1 {
+                throw DavyError.invalidRequest
+            }
             request = URLRequest(url: endpoint)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try DavyJSON.encoder.encode(DavyPayload(session: session, events: events))
+            request.httpBody = try DavyJSON.encoder.encode(DavyPayload(sentAt: sentAt, session: session, events: events))
         case let .queryString(method, _):
             guard events.count == 1, let event = events.first else {
                 throw DavyError.invalidRequest
             }
-            request = URLRequest(url: try queryStringURL(session: session, event: event))
+            request = URLRequest(url: try queryStringURL(session: session, event: event, sentAt: sentAt))
             request.httpMethod = method.rawValue
             // Every request has to reach the server to be logged, so never answer one from a cache.
             request.cachePolicy = .reloadIgnoringLocalCacheData
@@ -53,14 +58,14 @@ struct RequestBuilder: Sendable {
 
     /// The size of `event` in bytes: the length of the URL it's sent to with
     /// ``DavyConfiguration/RequestFormat/queryString(method:maxConcurrentRequests:)``,
-    /// whatever the configured format.
+    /// whatever the configured format. `sentAt` is always the same length, so any date will do.
     func size(of event: EventRecord, in session: Session) throws -> Int {
-        try queryStringURL(session: session, event: event).absoluteString.utf8.count
+        try queryStringURL(session: session, event: event, sentAt: .now).absoluteString.utf8.count
     }
 
-    /// `<endpoint>/<name>?eventId=…&type=…&timestamp=…&sessionId=…`, keeping any query items
-    /// already in the endpoint. Parameters whose value is `nil` are omitted.
-    private func queryStringURL(session: Session, event: EventRecord) throws -> URL {
+    /// `<endpoint>/<name>?eventId=…&type=…&timestamp=…&sentAt=…&sessionId=…`, keeping any query
+    /// items already in the endpoint. Parameters whose value is `nil` are omitted.
+    private func queryStringURL(session: Session, event: EventRecord, sentAt: Date) throws -> URL {
         guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: true) else {
             throw DavyError.invalidRequest
         }
@@ -71,6 +76,7 @@ struct RequestBuilder: Sendable {
             ("eventId", event.id.uuidString),
             ("type", event.type.rawValue),
             ("timestamp", DavyJSON.timestamp(event.timestamp)),
+            ("sentAt", DavyJSON.timestamp(sentAt)),
             ("sessionId", session.id.uuidString),
             ("environment", session.environment),
             ("appVersion", session.appVersion),

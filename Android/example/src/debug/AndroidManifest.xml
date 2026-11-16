@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Lets debug builds send events to the test server over plain HTTP. Before Android 7.0
+         (API 24), which ignores this, plain HTTP is allowed anyway. -->
+    <application
+        android:networkSecurityConfig="@xml/network_security_config"
+        tools:targetApi="24" />
+
+</manifest>

@@ -25,12 +25,15 @@ internal fun interface EventTransport {
     fun send(request: HttpRequest): HttpResponse
 }
 
+/** What sending a request produced: the response's status code, if one was received, and what it means for the events. */
+internal class DeliveryResult(val statusCode: Int?, val outcome: DeliveryOutcome)
+
 /** Sends [request] and classifies the result. */
-internal fun EventTransport.deliver(request: HttpRequest): DeliveryOutcome = try {
+internal fun EventTransport.deliver(request: HttpRequest): DeliveryResult = try {
     val response = send(request)
-    DeliveryOutcome.of(response.statusCode, response::header)
+    DeliveryResult(response.statusCode, DeliveryOutcome.of(response.statusCode, response::header))
 } catch (exception: Exception) {
-    DeliveryOutcome.Failed(exception.toString())
+    DeliveryResult(null, DeliveryOutcome.Failed(exception.toString()))
 }
 
 /**

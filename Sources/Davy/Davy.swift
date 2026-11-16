@@ -23,7 +23,9 @@ import os
 /// }
 /// ```
 ///
-/// With ``DavyConfiguration/RequestFormat/queryString(method:maxConcurrentRequests:)``, each
+/// With ``DavyConfiguration/RequestFormat/jsonEvent(maxConcurrentRequests:)``, each event is
+/// sent as its own request with this body, containing only that event. With
+/// ``DavyConfiguration/RequestFormat/queryString(method:maxConcurrentRequests:)``, each
 /// event is sent as its own request with the same fields in the URL instead.
 ///
 /// Events are sent when ``DavyConfiguration/batchSize`` events are pending, when
@@ -243,8 +245,9 @@ public final class Davy: Sendable {
         return updates
     }
 
-    /// Forgets the events recorded as sent, so ``DavyDebugSnapshot/sent`` starts empty again.
-    /// Pending events aren't affected.
+    /// Forgets the events recorded as sent and the requests recorded, so
+    /// ``DavyDebugSnapshot/sent`` and ``DavyDebugSnapshot/requests`` start empty again. Pending
+    /// events aren't affected.
     public func clearDebugHistory() {
         commands.yield(.clearDebugHistory)
     }

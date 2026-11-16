@@ -1,8 +1,9 @@
 import Foundation
 
-/// The events a ``Davy`` instance is waiting to send, the events it has recently sent, the most
-/// recent failure to send, and how many events it logged and sent each minute over the last hour,
-/// for checking your events during development.
+/// The events a ``Davy`` instance is waiting to send, the events and requests it has recently
+/// sent, how many events it has logged and sent, the most recent failure to send, and how many
+/// events it logged and sent each minute over the last hour, for checking your events during
+/// development.
 ///
 /// Get one with ``Davy/debugSnapshot()``, or a new one each time something changes with
 /// ``Davy/debugUpdates()``. ``DavyDebugView`` shows the same information.
@@ -15,6 +16,28 @@ public struct DavyDebugSnapshot: Sendable, Hashable {
     /// Events the server has accepted or rejected since this instance was created, oldest first,
     /// up to ``DavyConfiguration/debugHistoryLimit``.
     public let sent: [SentEvent]
+
+    /// Requests that finished since this instance was created, in the order they finished, up to
+    /// ``DavyConfiguration/debugHistoryLimit``.
+    ///
+    /// Includes requests that failed or were throttled, so you can see why events are still
+    /// pending.
+    public let requests: [Request]
+
+    /// How many events this instance has logged, plus how many were left over from earlier
+    /// launches when it was created.
+    ///
+    /// Each is either pending or sent, so this is always `pending.count + sentCount`. Events
+    /// discarded without being sent, because they were older than
+    /// ``DavyConfiguration/maxEventAge`` or couldn't be read, aren't counted.
+    public let loggedCount: Int
+
+    /// How many events the server has accepted or rejected since this instance was created,
+    /// including events left over from earlier launches.
+    ///
+    /// Unlike ``sent``, this isn't limited by ``DavyConfiguration/debugHistoryLimit`` or reset by
+    /// ``Davy/clearDebugHistory()``.
+    public let sentCount: Int
 
     /// The most recent failure to send, if no request has succeeded since.
     public let lastFailure: Failure?
@@ -35,7 +58,16 @@ public struct DavyDebugSnapshot: Sendable, Hashable {
     public let sessionStarts: [SessionStart]
 
     /// A snapshot with nothing pending, sent, or logged.
-    public static let empty = DavyDebugSnapshot(pending: [], sent: [], lastFailure: nil, activity: [], sessionStarts: [])
+    public static let empty = DavyDebugSnapshot(
+        pending: [],
+        sent: [],
+        requests: [],
+        loggedCount: 0,
+        sentCount: 0,
+        lastFailure: nil,
+        activity: [],
+        sessionStarts: []
+    )
 
     /// How far back ``activity`` goes.
     static let activityWindow: TimeInterval = 60 * 60
@@ -118,6 +150,48 @@ extension DavyDebugSnapshot {
         public let reason: String
         /// When the request failed.
         public let date: Date
+    }
+
+    /// An HTTP request Davy sent, with how the server responded.
+    public struct Request: Identifiable, Sendable, Hashable {
+        /// What the response meant for the request's events.
+        public enum Outcome: Sendable, Hashable {
+            /// The server accepted the events with a 2xx response.
+            case delivered
+            /// The server permanently rejected the events, for example with 400 Bad Request, so
+            /// they were discarded.
+            case rejected
+            /// The server asked for a pause with `Retry-After`, so the events were kept.
+            case throttled(retryAfter: TimeInterval)
+            /// No response was received, or the response means the events should be retried, so
+            /// they were kept. The reason is the same as ``Failure/reason``.
+            case failed(reason: String)
+        }
+
+        /// A random identifier for the request.
+        public let id: UUID
+        /// The HTTP method, `POST` or `GET`.
+        public let method: String
+        /// The full URL, including any query string.
+        public let url: URL
+        /// The header fields Davy set: ``DavyConfiguration/headers`` and, for JSON bodies,
+        /// `Content-Type`.
+        public let headers: [String: String]
+        /// The JSON body, or `nil` for
+        /// ``DavyConfiguration/RequestFormat/queryString(method:maxConcurrentRequests:)`` requests,
+        /// which have none.
+        public let body: String?
+        /// The IDs of the events in the request, oldest first.
+        public let eventIDs: [UUID]
+        /// When the request was sent.
+        public let sentAt: Date
+        /// How long until the response arrived or the request failed.
+        public let duration: TimeInterval
+        /// The response's HTTP status code, or `nil` if no response was received, for example
+        /// because the device is offline.
+        public let statusCode: Int?
+        /// What the response meant for the request's events.
+        public let outcome: Outcome
     }
 
     /// How many events were logged and sent in one minute.

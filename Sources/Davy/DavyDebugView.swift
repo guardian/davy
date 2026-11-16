@@ -1,17 +1,20 @@
 import Charts
 import SwiftUI
 
-/// Lists the events a ``Davy`` instance is waiting to send and the events it has recently
-/// sent, so you can check your events during development.
+/// Lists the events a ``Davy`` instance is waiting to send, the events it has recently sent, and
+/// the requests it sent them in, so you can check your events during development.
 ///
-/// The overview shows the current session ID, how many events are pending, and a chart of how
-/// many events were logged and sent each minute over the last hour, with dotted lines where each
-/// session's first event was logged. The events list shows pending and sent events together, most
-/// recently logged first, with an icon showing whether each has been sent.
+/// The overview shows the current session ID, how many events were logged since launch and how
+/// many of those are pending and sent, and a chart of how many events were logged and sent each
+/// minute over the last hour, with dotted lines where each session's first event was logged. The
+/// events list shows pending and sent events together, most recently logged first, with an icon
+/// showing whether each has been sent. The requests list shows each request, newest first, with
+/// how the server responded, including requests that failed.
 ///
-/// Select an event to see everything it's sent with, including its JSON. The toolbar sends
-/// pending events now and clears the sent history. If sending fails, the reason is shown at the
-/// top of the overview and the events list.
+/// Select an event to see everything it's sent with, including its JSON and the requests it was
+/// in. Select a request to see its URL, headers, body, and response. The toolbar sends pending
+/// events now and clears the sent history and requests. If sending fails, the reason is shown at
+/// the top of each page.
 ///
 /// The view has its own `NavigationStack`, so present it rather than pushing it, for example
 /// from a debug menu with ``SwiftUICore/View/davyDebugSheet(isPresented:)``:
@@ -21,7 +24,7 @@ import SwiftUI
 ///     .davyDebugSheet(isPresented: $showsDebugEvents)
 /// ```
 ///
-/// Events are listed as sent only if they were sent since the instance was created, up to
+/// Events and requests are listed only if they were sent since the instance was created, up to
 /// ``DavyConfiguration/debugHistoryLimit``. The view is a development tool, so its text is
 /// in English and isn't localized.
 public struct DavyDebugView: View {
@@ -81,6 +84,7 @@ public struct DavyDebugView: View {
 private enum DebugPage: Hashable {
     case overview
     case events
+    case requests
 }
 
 /// Where an event is in its journey to the server.
@@ -172,14 +176,45 @@ enum DebugEventFilter: String, CaseIterable, Identifiable {
     }
 }
 
+extension DavyDebugSnapshot.Request {
+    /// Whether the URL, percent-decoded, or the body contains `searchText`, ignoring case and
+    /// surrounding spaces. Empty text matches every request.
+    func matches(searchText: String) -> Bool {
+        let text = searchText.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return true }
+        let url = url.absoluteString.removingPercentEncoding ?? url.absoluteString
+        return [url, body ?? ""].contains { $0.localizedCaseInsensitiveContains(text) }
+    }
+
+    /// `HTTP 200`, or `No response` if none was received.
+    var statusTitle: String {
+        statusCode.map { "HTTP \($0)" } ?? "No response"
+    }
+
+    /// The body as indented JSON with sorted keys, or as sent if it isn't JSON.
+    var prettyBody: String? {
+        guard let body else { return nil }
+        guard let object = try? JSONSerialization.jsonObject(with: Data(body.utf8)),
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        else {
+            return body
+        }
+        return String(decoding: data, as: UTF8.self)
+    }
+}
+
 /// The latest ``DavyDebugSnapshot`` of an instance.
 @MainActor
 @Observable
 private final class DebugEventsModel {
     /// Pending and sent events together, most recently logged first.
     private(set) var events: [DebugEventItem] = []
+    private(set) var loggedCount = 0
     private(set) var pendingCount = 0
     private(set) var sentCount = 0
+    private(set) var sentHistoryCount = 0
+    /// Requests that finished, newest first.
+    private(set) var requests: [DavyDebugSnapshot.Request] = []
     private(set) var lastFailure: DavyDebugSnapshot.Failure?
     private(set) var activity: [DavyDebugSnapshot.Activity] = []
     /// When each session's first event was logged, oldest first.
@@ -190,8 +225,11 @@ private final class DebugEventsModel {
     func observe(_ telemetry: Davy) async {
         for await snapshot in telemetry.debugUpdates() {
             events = DebugEventItem.all(in: snapshot)
+            loggedCount = snapshot.loggedCount
             pendingCount = snapshot.pending.count
-            sentCount = snapshot.sent.count
+            sentCount = snapshot.sentCount
+            sentHistoryCount = snapshot.sent.count
+            requests = snapshot.requests.reversed()
             lastFailure = snapshot.lastFailure
             activity = snapshot.activity
             sessionStarts = snapshot.sessionStarts.map(\.date)
@@ -200,7 +238,17 @@ private final class DebugEventsModel {
     }
 
     func status(of id: UUID) -> DebugEventStatus {
-        events.first { $0.id == id }?.status ?? .unknown
+        item(for: id)?.status ?? .unknown
+    }
+
+    /// The event with `id`, if it's still pending or in the sent history.
+    func item(for id: UUID) -> DebugEventItem? {
+        events.first { $0.id == id }
+    }
+
+    /// The requests that included the event with `id`, newest first.
+    func requests(containing id: UUID) -> [DavyDebugSnapshot.Request] {
+        requests.filter { $0.eventIDs.contains(id) }
     }
 }
 
@@ -224,20 +272,32 @@ private struct DebugEventsScreen: View {
                     searchText: searchText,
                     filter: $filter
                 )
+            case .requests:
+                DebugRequestsList(
+                    model: model,
+                    historyLimit: telemetry.configuration.debugHistoryLimit,
+                    searchText: searchText
+                )
             }
         }
-        // On both pages, so the layout doesn't move when switching between them.
-        .searchable(text: $searchText, prompt: Text(verbatim: "Name, info, or ID"))
+        // On every page, so the layout doesn't move when switching between them.
+        .searchable(
+            text: $searchText,
+            prompt: Text(verbatim: selection == .requests ? "URL or body" : "Name, info, or ID")
+        )
         .onChange(of: searchText) { _, text in
-            if !text.isEmpty {
+            if !text.isEmpty && selection == .overview {
                 selection = .events
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            DebugEventsHeader(selection: $selection, eventCount: model.events.count)
+            DebugEventsHeader(selection: $selection, eventCount: model.events.count, requestCount: model.requests.count)
         }
         .navigationDestination(for: DavyDebugSnapshot.LoggedEvent.self) { event in
             DebugEventDestination(event: event, model: model)
+        }
+        .navigationDestination(for: DavyDebugSnapshot.Request.self) { request in
+            DebugRequestDestination(request: request, model: model)
         }
         .navigationDestination(for: DavyDebugSnapshot.Failure.self) { failure in
             DebugFailureDetail(failure: failure)
@@ -249,7 +309,7 @@ private struct DebugEventsScreen: View {
                 } label: {
                     Text(verbatim: "Clear Sent History")
                 }
-                .disabled(model.sentCount == 0)
+                .disabled(model.sentHistoryCount == 0 && model.requests.isEmpty)
                 Button {
                     telemetry.flush()
                 } label: {
@@ -266,6 +326,7 @@ private struct DebugEventsScreen: View {
 private struct DebugEventsHeader: View {
     @Binding var selection: DebugPage
     let eventCount: Int
+    let requestCount: Int
 
     var body: some View {
         Picker(selection: $selection) {
@@ -273,6 +334,8 @@ private struct DebugEventsHeader: View {
                 .tag(DebugPage.overview)
             Text(verbatim: "Events (\(eventCount))")
                 .tag(DebugPage.events)
+            Text(verbatim: "Requests (\(requestCount))")
+                .tag(DebugPage.requests)
         } label: {
             Text(verbatim: "Events")
         }
@@ -311,9 +374,9 @@ private struct DebugOverviewForm: View {
         Form {
             DebugSummarySection(
                 sessionID: sessionID,
+                loggedCount: model.loggedCount,
                 pendingCount: model.pendingCount,
-                loggedCount: activity.loggedCount,
-                sentCount: activity.sentCount
+                sentCount: model.sentCount
             )
             if let lastFailure = model.lastFailure {
                 DebugFailureSection(failure: lastFailure)
@@ -333,8 +396,8 @@ private struct DebugOverviewForm: View {
 
 private struct DebugSummarySection: View {
     let sessionID: UUID
-    let pendingCount: Int
     let loggedCount: Int
+    let pendingCount: Int
     let sentCount: Int
 
     var body: some View {
@@ -345,14 +408,14 @@ private struct DebugSummarySection: View {
             }
             .textSelection(.enabled)
             HStack(alignment: .top) {
-                DebugStat("Pending", value: pendingCount)
                 DebugStat("Logged", value: loggedCount, color: DebugActivitySeries.logged.color)
+                DebugStat("Pending", value: pendingCount)
                 DebugStat("Sent", value: sentCount, color: DebugActivitySeries.sent.color)
             }
         } header: {
             Text(verbatim: "Summary")
         } footer: {
-            Text(verbatim: "Logged and sent cover the last hour, including events left over from earlier launches.")
+            Text(verbatim: "Since launch, including events left over from earlier launches. Every logged event is pending or sent.")
         }
     }
 }
@@ -432,8 +495,6 @@ private struct DebugActivityWindow {
     /// rather than joining across them.
     let minutes: [DavyDebugSnapshot.Activity]
     let domain: ClosedRange<Date>
-    let loggedCount: Int
-    let sentCount: Int
     /// Whole numbers from zero to just above the busiest minute, about four apart.
     let countAxisValues: [Int]
     /// The quarter hours in the hour.
@@ -453,8 +514,6 @@ private struct DebugActivityWindow {
             return recorded[minute] ?? DavyDebugSnapshot.Activity(minute: minute, logged: 0, sent: 0)
         }
         domain = start...end
-        loggedCount = minutes.reduce(0) { $0 + $1.logged }
-        sentCount = minutes.reduce(0) { $0 + $1.sent }
 
         let busiest = minutes.map { max($0.logged, $0.sent) }.max() ?? 0
         let step = Self.axisStep(forMaximum: busiest)
@@ -722,25 +781,38 @@ private struct DebugEventStatusIcon: View {
     }
 }
 
-/// Looks up the event's current status, so it updates if the event is sent while shown.
+/// Looks up the event's current status and requests, so they update if the event is sent while
+/// shown.
 private struct DebugEventDestination: View {
     let event: DavyDebugSnapshot.LoggedEvent
     let model: DebugEventsModel
 
     var body: some View {
-        DebugEventDetail(event: event, status: model.status(of: event.id))
+        DebugEventDetail(event: event, status: model.status(of: event.id), requests: model.requests(containing: event.id))
     }
 }
 
 private struct DebugEventDetail: View {
     let event: DavyDebugSnapshot.LoggedEvent
     let status: DebugEventStatus
+    let requests: [DavyDebugSnapshot.Request]
 
     var body: some View {
         Form {
             DebugEventSummarySection(event: event, status: status)
             DebugEventInfoSection(info: event.info)
             DebugEventSessionSection(session: event.session)
+            if !requests.isEmpty {
+                Section {
+                    ForEach(requests) { request in
+                        NavigationLink(value: request) {
+                            DebugRequestRow(request: request)
+                        }
+                    }
+                } header: {
+                    Text(verbatim: "Requests")
+                }
+            }
             DebugEventJSONSection(event: event)
         }
         .formStyle(.grouped)
@@ -872,6 +944,211 @@ private struct DebugEventJSONSection: View {
     }
 }
 
+/// Requests that finished, newest first, narrowed by a search.
+private struct DebugRequestsList: View {
+    let model: DebugEventsModel
+    let historyLimit: Int
+    let searchText: String
+
+    var body: some View {
+        let requests = model.requests.filter { $0.matches(searchText: searchText) }
+        List {
+            if let lastFailure = model.lastFailure {
+                DebugFailureSection(failure: lastFailure)
+            }
+            Section {
+                ForEach(requests) { request in
+                    NavigationLink(value: request) {
+                        DebugRequestRow(request: request)
+                    }
+                }
+                if requests.isEmpty && !model.requests.isEmpty {
+                    ContentUnavailableView {
+                        Label {
+                            Text(verbatim: "No Matching Requests")
+                        } icon: {
+                            Image(systemName: "magnifyingglass")
+                        }
+                    } description: {
+                        Text(verbatim: "No requests match the search.")
+                    }
+                }
+            } footer: {
+                if !requests.isEmpty {
+                    Text(verbatim: "Requests are kept until the app quits, up to \(historyLimit).")
+                }
+            }
+        }
+        .overlay {
+            if !model.isLoaded {
+                ProgressView()
+            } else if model.requests.isEmpty && model.lastFailure == nil {
+                ContentUnavailableView {
+                    Label {
+                        Text(verbatim: "No Requests")
+                    } icon: {
+                        Image(systemName: "network")
+                    }
+                } description: {
+                    if historyLimit > 0 {
+                        Text(verbatim: "Requests are listed here once they finish, until the app quits, up to \(historyLimit).")
+                    } else {
+                        Text(verbatim: "Requests aren't kept because `debugHistoryLimit` is 0.")
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct DebugRequestRow: View {
+    let request: DavyDebugSnapshot.Request
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: request.outcome.symbolName)
+                .foregroundStyle(request.outcome.color)
+                .accessibilityLabel(Text(verbatim: request.outcome.title))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: "\(request.method) \(request.url.path(percentEncoded: false))")
+                    .font(.body.monospaced())
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                HStack(spacing: 8) {
+                    Text(request.sentAt, format: .debugTime)
+                    Text(verbatim: request.statusTitle)
+                        .foregroundStyle(request.outcome == .delivered ? Color.secondary : request.outcome.color)
+                    Text(verbatim: request.eventIDs.count == 1 ? "1 event" : "\(request.eventIDs.count) events")
+                    Text(verbatim: request.durationTitle)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/// Looks up the request's events, so their statuses update while shown.
+private struct DebugRequestDestination: View {
+    let request: DavyDebugSnapshot.Request
+    let model: DebugEventsModel
+
+    var body: some View {
+        DebugRequestDetail(request: request, events: request.eventIDs.map { (id: $0, item: model.item(for: $0)) })
+    }
+}
+
+private struct DebugRequestDetail: View {
+    let request: DavyDebugSnapshot.Request
+    /// The request's events, with each one's item if it's still pending or in the sent history.
+    let events: [(id: UUID, item: DebugEventItem?)]
+
+    var body: some View {
+        let queryItems = URLComponents(url: request.url, resolvingAgainstBaseURL: true)?.queryItems ?? []
+        Form {
+            Section {
+                DebugField("Method") {
+                    Text(request.method)
+                        .monospaced()
+                }
+                DebugField("URL") {
+                    Text(request.url.absoluteString)
+                        .font(.caption.monospaced())
+                }
+                DebugField("Sent") {
+                    Text(request.sentAt, format: .dateTime.year().month().day().hour().minute().second().secondFraction(.fractional(3)))
+                }
+                DebugField("Duration") {
+                    Text(verbatim: request.durationTitle)
+                }
+                DebugField("Status") {
+                    Text(verbatim: request.statusTitle)
+                }
+                DebugField("Outcome") {
+                    Text(verbatim: request.outcome.detail)
+                        .foregroundStyle(request.outcome == .delivered ? Color.primary : request.outcome.color)
+                }
+            }
+            .textSelection(.enabled)
+            if case let .failed(reason) = request.outcome {
+                Section {
+                    Text(reason)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                } header: {
+                    Text(verbatim: "Reason")
+                }
+            }
+            Section {
+                ForEach(events, id: \.id) { event in
+                    if let item = event.item {
+                        NavigationLink(value: item.event) {
+                            DebugEventRow(event: item.event, status: item.status)
+                        }
+                    } else {
+                        Text(event.id.uuidString)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                    }
+                }
+            } header: {
+                Text(verbatim: "Events (\(events.count))")
+            } footer: {
+                if events.contains(where: { $0.item == nil }) {
+                    Text(verbatim: "Events shown by ID are no longer pending or in the sent history.")
+                }
+            }
+            Section {
+                if request.headers.isEmpty {
+                    Text(verbatim: "None")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(request.headers.sorted(by: <), id: \.key) { header in
+                        LabeledContent(header.key) {
+                            Text(header.value)
+                                .font(.caption.monospaced())
+                        }
+                    }
+                }
+            } header: {
+                Text(verbatim: "Headers")
+            }
+            .textSelection(.enabled)
+            if !queryItems.isEmpty {
+                Section {
+                    ForEach(Array(queryItems.enumerated()), id: \.offset) { _, item in
+                        LabeledContent(item.name) {
+                            Text(item.value ?? "")
+                                .font(.caption.monospaced())
+                        }
+                    }
+                } header: {
+                    Text(verbatim: "Query")
+                }
+                .textSelection(.enabled)
+            }
+            if let body = request.prettyBody {
+                Section {
+                    Text(body)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                    ShareLink(item: body) {
+                        Label {
+                            Text(verbatim: "Share Body")
+                        } icon: {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                    }
+                } header: {
+                    Text(verbatim: "Body")
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle(Text(verbatim: "Request"))
+    }
+}
+
 /// A row whose title, like all of this view's text, isn't localized.
 private struct DebugField<Value: View>: View {
     let title: String
@@ -916,6 +1193,50 @@ private extension DebugEventStatus {
         case .sent(_, .delivered): DebugActivitySeries.sent.color
         case .sent(_, .rejected): .red
         case .unknown: .secondary
+        }
+    }
+}
+
+private extension DavyDebugSnapshot.Request {
+    /// In whole milliseconds, for example `123 ms`.
+    var durationTitle: String {
+        "\(Int((duration * 1000).rounded())) ms"
+    }
+}
+
+private extension DavyDebugSnapshot.Request.Outcome {
+    var title: String {
+        switch self {
+        case .delivered: "Delivered"
+        case .rejected: "Rejected"
+        case .throttled: "Throttled"
+        case .failed: "Failed"
+        }
+    }
+
+    /// The title, with how long the server asked to pause for. A failure's reason, which can be
+    /// long, is shown separately.
+    var detail: String {
+        switch self {
+        case .delivered, .rejected, .failed: title
+        case let .throttled(retryAfter): "Throttled: retry after \(Int(retryAfter.rounded(.up))) s"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .delivered: "checkmark.circle.fill"
+        case .rejected: "xmark.circle.fill"
+        case .throttled: "pause.circle.fill"
+        case .failed: "exclamationmark.triangle.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .delivered: DebugActivitySeries.sent.color
+        case .rejected: .red
+        case .throttled, .failed: .orange
         }
     }
 }
