@@ -131,7 +131,13 @@ struct SpecConformanceTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = RecordingTransport()
         let telemetry = Davy(
-            configuration: DavyConfiguration(endpoint: endpoint, format: format, environment: "beta", storageDirectory: directory),
+            configuration: DavyConfiguration(
+                endpoint: endpoint,
+                format: format,
+                environment: "beta",
+                info: ["edition": "uk"],
+                storageDirectory: directory
+            ),
             transport: transport,
             notificationCenter: nil
         )
@@ -166,7 +172,8 @@ struct SpecConformanceTests {
         let sessions = [
             Session(
                 id: UUID(), environment: "production", appVersion: "1.2.0", build: "45",
-                os: "iOS", osVersion: "26.1.0", deviceModel: "iPhone17,1", locale: "es_419"
+                os: "iOS", osVersion: "26.1.0", deviceModel: "iPhone17,1", locale: "es_419",
+                info: ["edition": "uk", "tier": "supporter"]
             ),
             Session(
                 id: UUID(), environment: nil, appVersion: nil, build: nil,

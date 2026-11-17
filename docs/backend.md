@@ -43,7 +43,10 @@ A `POST` to the endpoint with `Content-Type: application/json`. Each request con
     "os": "iOS",
     "osVersion": "26.1.0",
     "deviceModel": "iPhone17,1",
-    "locale": "en_GB"
+    "locale": "en_GB",
+    "info": {
+      "edition": "uk"
+    }
   },
   "events": [
     { "id": "1B4E28BA-2FA1-11D2-883F-0016D3CCA427", "type": "breadcrumb", "name": "checkout_started", "timestamp": "2026-11-09T11:38:55.780Z" },
@@ -89,8 +92,8 @@ For servers that can log fields from the URL but not from the body, such as a CD
 POST https://api.example.com/events/payment_declined?eventId=9C5B94B1-…&type=error&timestamp=2026-11-09T11%3A38%3A57.112Z&sentAt=2026-11-09T11%3A39%3A00.250Z&sessionId=6F9619FF-…&environment=production&appVersion=1.2.0&build=45&os=Android&osVersion=15.0.0&deviceModel=Pixel%209&locale=en_GB&info=%7B%22cpu_percent%22%3A%2212%22%2C%22low_power_mode%22%3A%22false%22%2C%22memory_available_mb%22%3A%22190%22%2C%22memory_used_mb%22%3A%22143%22%2C%22reason%22%3A%22card_expired%22%2C%22thermal_state%22%3A%22none%22%7D
 ```
 
-- Parameters are, in this order: `eventId`, `type`, `timestamp`, and `sentAt` from the event and request; `sessionId`, `environment`, `appVersion`, `build`, `os`, `osVersion`, `deviceModel`, and `locale` from the session; then the event's `info`.
-- `info` is a JSON object string with sorted keys.
+- Parameters are, in this order: `eventId`, `type`, `timestamp`, and `sentAt` from the event and request; `sessionId`, `environment`, `appVersion`, `build`, `os`, `osVersion`, `deviceModel`, `locale`, and `sessionInfo` from the session; then the event's `info`.
+- `sessionInfo` and `info` are JSON object strings with sorted keys.
 - Everything except `A–Z a–z 0–9 - . _ ~` is percent-encoded, including `+`, so values decode the same way on every server.
 - Query items already in the endpoint are kept.
 - With `GET`, the server should respond with `Cache-Control: no-store` so proxies don't cache it.
@@ -108,6 +111,7 @@ POST https://api.example.com/events/payment_declined?eventId=9C5B94B1-…&type=e
 | `osVersion` | `major.minor.patch`, for example `26.1.0`, or `15.0.0` for Android 15 |
 | `deviceModel` | The hardware model identifier on Apple platforms, such as `iPhone17,1`, or `Simulator`; the model name on Android, such as `Pixel 9` |
 | `locale` | The device's language and region only, for example `en_GB`, or just the language if there's no region |
+| `info` | The configured `info` and any entries added with `addSessionInfo`, as strings, for additional app and session details; `sessionInfo` in the query string format; omitted if empty |
 
 The session ID is kept in memory and never reused, so it links events within a session without identifying the user or device across sessions. Events left over from a previous launch are sent in their own request with their original session data, so they're attributed to the app and OS version they were logged in, even after an update.
 

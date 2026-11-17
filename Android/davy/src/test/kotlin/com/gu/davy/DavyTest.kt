@@ -36,8 +36,14 @@ class DavyTest {
     @Test
     fun breadcrumbsAndErrorsAreSentInOrderWithSessionData() {
         val transport = MockTransport()
-        val session = testSession("beta")
-        val telemetry = makeDavy(directory(), transport, environment = "beta", session = session).tracked()
+        val session = testSession("beta", mapOf("edition" to "uk"))
+        val telemetry = makeDavy(
+            directory(),
+            transport,
+            environment = "beta",
+            info = mapOf("edition" to "uk"),
+            session = session,
+        ).tracked()
 
         telemetry.log(Event.Breadcrumb("checkout_started"))
         telemetry.log(Event.Error("payment_declined", mapOf("reason" to "card_expired")))
@@ -58,6 +64,39 @@ class DavyTest {
         val sent = DavyJson.parseSession(payloads.single().getJSONObject("session"))
         assertEquals(session, sent)
         assertEquals(telemetry.sessionId, sent.id)
+    }
+
+    @Test
+    fun addSessionInfoReplacesMatchingKeysAndLogsASessionUpdatedBreadcrumb() {
+        val transport = MockTransport()
+        val session = testSession("beta", mapOf("edition" to "uk", "theme" to "dark"))
+        val telemetry = makeDavy(
+            directory(),
+            transport,
+            environment = "beta",
+            info = mapOf("edition" to "uk", "theme" to "dark"),
+            session = session,
+        ).tracked()
+
+        telemetry.log(Event.Breadcrumb("app_launched"))
+        telemetry.addSessionInfo(mapOf("edition" to "au", "tier" to "supporter"))
+        telemetry.log(Event.Breadcrumb("article_opened"))
+        telemetry.flushAndWaitBlocking()
+
+        val payloads = transport.payloads
+        assertEquals(2, payloads.size)
+        assertEquals(listOf(telemetry.sessionId, telemetry.sessionId), payloads.map { DavyJson.parseSession(it.getJSONObject("session")).id })
+        assertEquals(mapOf("edition" to "uk", "theme" to "dark"), DavyJson.parseSession(payloads[0].getJSONObject("session")).info)
+        assertEquals(listOf("app_launched"), payloads[0].getJSONArray("events").objects().map { it.getString("name") })
+
+        assertEquals(
+            mapOf("edition" to "au", "theme" to "dark", "tier" to "supporter"),
+            DavyJson.parseSession(payloads[1].getJSONObject("session")).info,
+        )
+        val updatedEvents = payloads[1].getJSONArray("events").objects()
+        assertEquals(listOf("session_updated", "article_opened"), updatedEvents.map { it.getString("name") })
+        assertEquals(listOf("breadcrumb", "breadcrumb"), updatedEvents.map { it.getString("type") })
+        assertEquals(mapOf("edition" to "au", "tier" to "supporter"), updatedEvents[0].loggedInfo())
     }
 
     @Test
@@ -314,13 +353,14 @@ class DavyTest {
     fun queryStringSendsEachEventAsItsOwnRequestWithFieldsInTheURL() {
         for (method in HttpMethod.entries) {
             val transport = MockTransport()
-            val session = testSession("beta")
+            val session = testSession("beta", mapOf("edition" to "uk"))
             val telemetry = makeDavy(
                 directory(),
                 transport,
                 endpoint = "https://example.com/events?key=abc",
                 format = RequestFormat.QueryString(method),
                 environment = "beta",
+                info = mapOf("edition" to "uk"),
                 headers = mapOf("Authorization" to "Bearer token"),
                 session = session,
             ).tracked()
@@ -350,6 +390,7 @@ class DavyTest {
                 assertEquals(session.osVersion, query["osVersion"])
                 assertEquals(session.deviceModel, query["deviceModel"])
                 assertEquals(session.locale, query["locale"])
+                assertEquals(mapOf("edition" to "uk"), JSONObject(query.getValue("sessionInfo")).strings())
                 assertTrue(abs(DavyJson.parseTimestamp(query.getValue("timestamp")) - System.currentTimeMillis()) < 60_000)
             }
             assertEquals(2, eventIds.size)

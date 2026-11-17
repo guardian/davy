@@ -83,6 +83,7 @@ internal object DavyJson {
         osVersion = json.getString("osVersion"),
         deviceModel = json.stringOrNull("deviceModel"),
         locale = json.stringOrNull("locale"),
+        info = json.optJSONObject("info")?.let { info -> info.keys().asSequence().associateWith(info::getString) }?.takeIf { it.isNotEmpty() },
     )
 
     /** Reads an event in the form [payload] writes it. */
@@ -112,28 +113,25 @@ internal object DavyJson {
                 "osVersion" to session.osVersion,
                 "deviceModel" to session.deviceModel,
                 "locale" to session.locale,
+                "info" to session.info?.takeIf { it.isNotEmpty() }?.toSortedMap(),
             ),
         )
     }
 
     private fun StringBuilder.appendEvent(event: EventRecord) {
-        append("{\"id\":")
-        appendString(uuid(event.id))
-        append(",\"type\":")
-        appendString(event.type.wireName)
-        append(",\"name\":")
-        appendString(event.name)
-        event.info?.let {
-            append(",\"info\":")
-            appendObject(it.toSortedMap())
-        }
-        append(",\"timestamp\":")
-        appendString(timestamp(event.timestampMillis))
-        append('}')
+        appendObject(
+            linkedMapOf(
+                "id" to uuid(event.id),
+                "type" to event.type.wireName,
+                "name" to event.name,
+                "info" to event.info?.takeIf { it.isNotEmpty() }?.toSortedMap(),
+                "timestamp" to timestamp(event.timestampMillis),
+            ),
+        )
     }
 
-    /** An object of strings, omitting `null` values. */
-    private fun StringBuilder.appendObject(fields: Map<String, String?>) {
+    /** An object of strings and nested string maps, omitting `null` values. */
+    private fun StringBuilder.appendObject(fields: Map<String, Any?>) {
         append('{')
         var first = true
         for ((key, value) in fields) {
@@ -142,7 +140,12 @@ internal object DavyJson {
             first = false
             appendString(key)
             append(':')
-            appendString(value)
+            if (value is Map<*, *>) {
+                @Suppress("UNCHECKED_CAST")
+                appendObject(value as Map<String, Any?>)
+            } else {
+                appendString(value.toString())
+            }
         }
         append('}')
     }
@@ -158,6 +161,7 @@ internal object DavyJson {
             "osVersion" to session.osVersion,
             "deviceModel" to session.deviceModel,
             "locale" to session.locale,
+            "info" to session.info?.takeIf { it.isNotEmpty() },
         )
         val eventFields = mapOf(
             "id" to uuid(event.id),

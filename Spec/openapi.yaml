@@ -25,7 +25,7 @@ info:
     - In the query string format, parameters are sent in the order listed here, after any query
       items already in the endpoint, and omitted when they have no value. Everything except
       `A–Z a–z 0–9 - . _ ~` is percent-encoded, including `+`, in both the path and the query.
-      `info` is compact JSON with sorted keys and unescaped slashes.
+      `info` and `sessionInfo` are compact JSON with sorted keys and unescaped slashes.
     - Each event, measured as the length of its query string URL, is at most `maxEventSize` bytes
       (default 2,048), whichever format is used. A larger event is replaced with the error
       `davy_event_too_large`.
@@ -87,6 +87,9 @@ paths:
                 osVersion: 26.1.0
                 deviceModel: iPhone17,1
                 locale: en_GB
+                info:
+                  edition: uk
+                  tier: supporter
               events:
                 - id: 1B4E28BA-2FA1-11D2-883F-0016D3CCA427
                   type: breadcrumb
@@ -137,6 +140,7 @@ paths:
       - $ref: '#/components/parameters/OSVersion'
       - $ref: '#/components/parameters/DeviceModel'
       - $ref: '#/components/parameters/Locale'
+      - $ref: '#/components/parameters/SessionInfo'
       - $ref: '#/components/parameters/Info'
     post:
       tags: [Query string]
@@ -235,6 +239,8 @@ components:
           $ref: '#/components/schemas/DeviceModel'
         locale:
           $ref: '#/components/schemas/Locale'
+        info:
+          $ref: '#/components/schemas/Info'
     Event:
       type: object
       description: A breadcrumb or error logged by the app.
@@ -450,6 +456,14 @@ components:
       in: query
       schema:
         $ref: '#/components/schemas/Locale'
+    SessionInfo:
+      name: sessionInfo
+      in: query
+      description: The session's `info` as compact JSON with sorted keys. Omitted when empty.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Info'
     Info:
       name: info
       in: query

@@ -15,7 +15,11 @@
         "os": "iOS",
         "osVersion": "26.1.0",
         "deviceModel": "iPhone17,1",
-        "locale": "en_GB"
+        "locale": "en_GB",
+        "info": {
+          "edition": "uk",
+          "tier": "supporter"
+        }
       },
       "events": [
         { "id": "1B4E28BA-2FA1-11D2-883F-0016D3CCA427", "type": "breadcrumb", "name": "checkout_started", "timestamp": "2026-11-09T11:38:55.780Z" },
@@ -54,6 +58,10 @@
             "deviceModel": "iPhone17,1",
             "environment": "production",
             "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
+            "info": {
+              "edition": "uk",
+              "tier": "supporter"
+            },
             "locale": "en_GB",
             "os": "iOS",
             "osVersion": "26.1.0"
@@ -116,7 +124,11 @@
         "os": "Android",
         "osVersion": "15.0.0",
         "deviceModel": "Pixel 9",
-        "locale": "es_419"
+        "locale": "es_419",
+        "info": {
+          "edition": "uk",
+          "tier": "supporter"
+        }
       },
       "events": [
         {
@@ -129,7 +141,7 @@
       ],
       "expected": {
         "method": "POST",
-        "url": "https://api.example.com/v1/events/payment_declined?key=abc&eventId=9C5B94B1-35AD-49BB-B118-8E8FC24ABF80&type=error&timestamp=2026-11-09T11%3A38%3A57.112Z&sentAt=2026-11-09T11%3A39%3A00.250Z&sessionId=6F9619FF-8B86-D011-B42D-00C04FC964FF&environment=beta&appVersion=1.2.0%20%28beta%29&build=45&os=Android&osVersion=15.0.0&deviceModel=Pixel%209&locale=es_419&info=%7B%22emoji%22%3A%22%F0%9F%91%A9%E2%80%8D%F0%9F%91%A9%E2%80%8D%F0%9F%91%A7%22%2C%22note%22%3A%22caf%C3%A9%20%E2%98%95%EF%B8%8F%20%26%20more%22%2C%22path%22%3A%22a%2Fb%2Bc%3Dd%3Fe%23f%25%22%2C%22quote%22%3A%22say%20%5C%22hi%5C%22%20%5C%5C%20bye%22%2C%22reason%22%3A%22card_expired%22%7D",
+        "url": "https://api.example.com/v1/events/payment_declined?key=abc&eventId=9C5B94B1-35AD-49BB-B118-8E8FC24ABF80&type=error&timestamp=2026-11-09T11%3A38%3A57.112Z&sentAt=2026-11-09T11%3A39%3A00.250Z&sessionId=6F9619FF-8B86-D011-B42D-00C04FC964FF&environment=beta&appVersion=1.2.0%20%28beta%29&build=45&os=Android&osVersion=15.0.0&deviceModel=Pixel%209&locale=es_419&sessionInfo=%7B%22edition%22%3A%22uk%22%2C%22tier%22%3A%22supporter%22%7D&info=%7B%22emoji%22%3A%22%F0%9F%91%A9%E2%80%8D%F0%9F%91%A9%E2%80%8D%F0%9F%91%A7%22%2C%22note%22%3A%22caf%C3%A9%20%E2%98%95%EF%B8%8F%20%26%20more%22%2C%22path%22%3A%22a%2Fb%2Bc%3Dd%3Fe%23f%25%22%2C%22quote%22%3A%22say%20%5C%22hi%5C%22%20%5C%5C%20bye%22%2C%22reason%22%3A%22card_expired%22%7D",
         "headers": {
           "Authorization": "Bearer abc123"
         }

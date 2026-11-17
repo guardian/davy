@@ -6,7 +6,8 @@ import Testing
 struct DebugEventFilterTests {
     private let session = Session(
         id: UUID(), environment: nil, appVersion: "1.2.0", build: "45",
-        os: "iOS", osVersion: "26.1.0", deviceModel: "iPhone17,1", locale: "en_GB"
+        os: "iOS", osVersion: "26.1.0", deviceModel: "iPhone17,1", locale: "en_GB",
+        info: ["edition": "uk"]
     )
     private let snapshot: DavyDebugSnapshot
 
@@ -74,6 +75,7 @@ struct DebugEventFilterTests {
         #expect(names(searchText: "CHECKOUT") == ["checkout_started"])
         #expect(names(searchText: "cart") == ["checkout_started"])
         #expect(names(searchText: "Reason") == ["payment_declined"])
+        #expect(names(searchText: "EDITION") == names())
         #expect(names(searchText: " 9c5b94b1 ") == ["payment_declined"])
         #expect(names(searchText: "refund").isEmpty)
         #expect(names(.pending, searchText: "payment").isEmpty)

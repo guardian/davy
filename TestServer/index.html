@@ -157,6 +157,7 @@
     return element("div", { title: `Session ${text(session.id)}` },
       element("div", {}, join([session.os, session.osVersion].filter((part) => part !== undefined).map(text).join(" "), app, session.environment)),
       element("div", { class: "muted" }, join(session.deviceModel, session.locale, typeof session.id === "string" ? session.id.slice(0, 8) : session.id)),
+      session.info !== undefined ? element("div", { class: "info mono" }, infoList(session.info)) : null,
     );
   }
 
@@ -192,7 +193,7 @@
     if ($("problems-only").checked && request.problems.length === 0) return false;
     const values = [formatLabel(request), String(request.response.status), ...request.problems];
     if (event) values.push(event.id, event.type, event.name, ...Object.entries(event.info ?? {}).flat());
-    if (request.session) values.push(...Object.values(request.session));
+    if (request.session) values.push(...Object.values(request.session), ...Object.entries(request.session.info ?? {}).flat());
     const haystack = values.map(text).join("\n").toLowerCase();
     return terms.every((term) => haystack.includes(term));
   }

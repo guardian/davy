@@ -45,6 +45,7 @@ const SESSION_PARAMETERS: Record<string, string> = {
   osVersion: "osVersion",
   deviceModel: "deviceModel",
   locale: "locale",
+  sessionInfo: "info",
 };
 const EVENT_PARAMETERS: Record<string, string> = {
   eventId: "id",

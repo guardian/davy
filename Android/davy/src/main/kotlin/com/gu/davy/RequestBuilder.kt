@@ -79,6 +79,7 @@ internal class RequestBuilder(
             "osVersion" to session.osVersion,
             "deviceModel" to session.deviceModel,
             "locale" to session.locale,
+            "sessionInfo" to session.info?.takeIf { it.isNotEmpty() }?.let(DavyJson::info),
             "info" to event.info?.let(DavyJson::info),
         )
         val query = listOfNotNull(endpoint.rawQuery?.takeIf { it.isNotEmpty() }) +

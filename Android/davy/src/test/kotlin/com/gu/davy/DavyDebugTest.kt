@@ -31,7 +31,7 @@ class DavyDebugTest {
     @Test
     fun debugSnapshotListsUnsentEventsAsPending() {
         val transport = MockTransport()
-        val telemetry = makeDavy(directory(), transport).tracked()
+        val telemetry = makeDavy(directory(), transport, info = mapOf("edition" to "uk")).tracked()
 
         telemetry.log(Event.Breadcrumb("checkout_started"))
         telemetry.log(Event.Error("payment_declined", mapOf("reason" to "card_expired")))
@@ -41,6 +41,7 @@ class DavyDebugTest {
         assertEquals(listOf(false, true), snapshot.pending.map { it.isError })
         assertEquals(listOf(null, "card_expired"), snapshot.pending.map { it.info["reason"] })
         assertEquals(listOf(telemetry.sessionId, telemetry.sessionId), snapshot.pending.map { it.sessionId })
+        assertEquals(listOf(mapOf("edition" to "uk"), mapOf("edition" to "uk")), snapshot.pending.map { it.sessionInfo })
         assertEquals(Event.Breadcrumb("checkout_started"), snapshot.pending[0].event)
         assertEquals(2, snapshot.pending.map { it.id }.toSet().size)
         assertTrue(snapshot.sent.isEmpty())

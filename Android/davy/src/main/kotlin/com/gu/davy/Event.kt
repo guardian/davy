@@ -52,6 +52,9 @@ public sealed class Event {
         /** Logged when the app moves to the background, if lifecycle events are enabled. */
         val APP_BACKGROUNDED = Breadcrumb("app_backgrounded")
 
+        /** Logged by [Davy.addSessionInfo] after updating the session's `info`. */
+        const val SESSION_UPDATED_NAME = "session_updated"
+
         /**
          * Whether [name] is lowercase ASCII letters and digits in words separated by single
          * underscores, starting with a letter, for example `checkout_started` or `step_2`.

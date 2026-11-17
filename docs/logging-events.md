@@ -81,6 +81,24 @@ val feed = telemetry.measure("feed_load") {
 
 The breadcrumb is logged even if the block throws, so log an error as well if you need to tell failures apart.
 
+## Updating session info
+
+Set `info` on `DavyConfiguration` for session details known at launch, and call `addSessionInfo` when they become known or change later, for example after reading remote configuration. It merges the entries into the session's `info`, replacing any existing values for the same keys, and logs a `session_updated` breadcrumb with the entries you passed:
+
+```swift
+// Swift
+telemetry.addSessionInfo(["edition": "au", "tier": "supporter"])
+// Logs .breadcrumb("session_updated", info: ["edition": "au", "tier": "supporter"])
+```
+
+```kotlin
+// Kotlin
+telemetry.addSessionInfo(mapOf("edition" to "au", "tier" to "supporter"))
+// Logs Event.Breadcrumb("session_updated", mapOf("edition" to "au", "tier" to "supporter"))
+```
+
+Events logged before the call keep the earlier `session.info`, and the `session_updated` breadcrumb and every event logged after it carry the updated `session.info` (starting a new JSON batch when `session.info` changes).
+
 ## Sending events now
 
 Events are sent automatically; see [When events are sent](delivery.md#when-events-are-sent). To send everything pending now:

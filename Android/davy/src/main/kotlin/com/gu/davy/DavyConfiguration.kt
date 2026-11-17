@@ -15,6 +15,9 @@ import kotlin.time.Duration.Companion.seconds
  * @property environment The kind of build sending events, for example `debug`, `beta`, or
  *   `production`, sent as the session's `environment`. Omitted when `null`. Use it to keep test
  *   data apart from real usage.
+ * @property info Additional details about the app and session, sent with every event as the
+ *   request's `session.info` (or `sessionInfo` query parameter). Omitted when empty. As with event
+ *   `info`, don't include personal data or values that identify a person or device across sessions.
  * @property onInvalidEventName What [Davy.log] does with an event whose name isn't lower snake
  *   case, such as `checkoutStarted` or `checkout-started` instead of `checkout_started`. A common
  *   setup is [InvalidEventNameAction.CRASH] in debug builds, so inconsistent names are caught
@@ -49,6 +52,7 @@ public data class DavyConfiguration(
     val endpoint: URI,
     val format: RequestFormat = RequestFormat.JsonBatch,
     val environment: String? = null,
+    val info: Map<String, String> = emptyMap(),
     val onInvalidEventName: InvalidEventNameAction = InvalidEventNameAction.SEND,
     val maxEventSize: Int = 2048,
     val logsAppLifecycleEvents: Boolean = false,

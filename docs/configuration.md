@@ -7,6 +7,7 @@ Only `endpoint` is required. The options have the same names on every platform; 
 | `endpoint` | None | The URL that events are sent to |
 | `format` | `.jsonBatch` / `RequestFormat.JsonBatch` | How events are encoded into requests: JSON batches, one JSON request per event, or one request per event with every field in the URL; see [Request formats](backend.md#request-formats) |
 | `environment` | `nil` / `null` | The kind of build, for example `debug`, `beta`, or `production`, sent as the session's `environment` to keep test data apart from real usage |
+| `info` | Empty | Additional details about the app and session, sent with every event in `session.info` (or the `sessionInfo` query parameter); can be updated later with [`addSessionInfo`](logging-events.md#updating-session-info) |
 | `onInvalidEventName` | `.send` / `SEND` | What to do with event names that aren't lower snake case; see [Consistent event names](logging-events.md#consistent-event-names) |
 | `maxEventSize` | `2048` | The largest event in bytes, measured as its query string URL; larger events are replaced with an error; see [Event size](logging-events.md#event-size) |
 | `logsAppLifecycleEvents` | `false` | Log `app_foregrounded` and `app_backgrounded` breadcrumbs; see [Foreground and background](logging-events.md#foreground-and-background) |
@@ -31,6 +32,7 @@ let telemetry = Davy(configuration: DavyConfiguration(
     endpoint: URL(string: "https://api.example.com/events")!,
     format: .queryString(method: .post, maxConcurrentRequests: 4),
     environment: "production",
+    info: ["edition": "uk"],
     onInvalidEventName: .sendError,
     maxEventSize: 2048,
     logsAppLifecycleEvents: true,
@@ -49,6 +51,7 @@ val telemetry = Davy(context, DavyConfiguration(
     endpoint = URI("https://api.example.com/events"),
     format = RequestFormat.QueryString(method = HttpMethod.POST, maxConcurrentRequests = 4),
     environment = "production",
+    info = mapOf("edition" to "uk"),
     onInvalidEventName = InvalidEventNameAction.SEND_ERROR,
     maxEventSize = 2048,
     logsAppLifecycleEvents = true,

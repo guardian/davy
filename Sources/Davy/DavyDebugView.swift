@@ -124,12 +124,14 @@ struct DebugEventItem: Identifiable {
             .map(\.element)
     }
 
-    /// Whether the event's name, an `info` key or value, or its ID contains `searchText`,
-    /// ignoring case and surrounding spaces. Empty text matches every event.
+    /// Whether the event's name, an `info` or `sessionInfo` key or value, or its ID contains
+    /// `searchText`, ignoring case and surrounding spaces. Empty text matches every event.
     func matches(searchText: String) -> Bool {
         let text = searchText.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return true }
-        let fields = [event.name, event.id.uuidString] + event.info.flatMap { [$0.key, $0.value] }
+        let fields = [event.name, event.id.uuidString]
+            + event.info.flatMap { [$0.key, $0.value] }
+            + event.sessionInfo.flatMap { [$0.key, $0.value] }
         return fields.contains { $0.localizedCaseInsensitiveContains(text) }
     }
 }
@@ -914,6 +916,13 @@ private struct DebugEventSessionSection: View {
             }
             DebugField("Locale") {
                 Text(session.locale ?? "—")
+            }
+            if let info = session.info {
+                ForEach(info.sorted(by: <), id: \.key) { entry in
+                    LabeledContent(entry.key) {
+                        Text(entry.value)
+                    }
+                }
             }
         } header: {
             Text(verbatim: "Session")

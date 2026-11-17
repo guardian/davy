@@ -31,7 +31,7 @@ import kotlin.math.ceil
  * - Rejected events are discarded so they don't block the queue.
  */
 internal class EventPipeline(
-    private val session: Session,
+    private var session: Session,
     private val configuration: DavyConfiguration,
     private val storageDirectory: File,
     private val transport: EventTransport,
@@ -137,6 +137,13 @@ internal class EventPipeline(
 
     fun log(record: EventRecord) {
         submit { persist(record) }
+    }
+
+    fun addSessionInfo(info: Map<String, String>, record: EventRecord) {
+        submit {
+            session = session.addingInfo(info)
+            persist(record)
+        }
     }
 
     /**
@@ -375,9 +382,10 @@ internal class EventPipeline(
             if (batch.isEmpty()) return null
             val decoded = decode(batch)
             val session = decoded.firstOrNull()?.session ?: continue
-            // Each request carries a single session, so take the leading run of events from the
-            // oldest session; any later sessions go in the next request.
-            val run = decoded.takeWhile { it.session.id == session.id }
+            // Each request carries a single session, so take the leading run of events with the
+            // same session; any later sessions (or later `session.info` values) go in the next
+            // request.
+            val run = decoded.takeWhile { it.session == session }
             return Delivery(run.map { it.stored }, session, run.map { it.event })
         }
     }

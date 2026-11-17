@@ -95,7 +95,7 @@ internal val testDiagnostics = mapOf(
 
 internal fun temporaryDirectory(): File = Files.createTempDirectory("DavyTests").toFile()
 
-internal fun testSession(environment: String? = null) = Session(
+internal fun testSession(environment: String? = null, info: Map<String, String>? = null) = Session(
     id = UUID.randomUUID(),
     environment = environment,
     appVersion = "1.2.0",
@@ -104,6 +104,7 @@ internal fun testSession(environment: String? = null) = Session(
     osVersion = "15.0.0",
     deviceModel = "Pixel 9",
     locale = "en_GB",
+    info = info?.takeIf { it.isNotEmpty() },
 )
 
 internal fun makeDavy(
@@ -112,6 +113,7 @@ internal fun makeDavy(
     endpoint: String = "https://example.com/events",
     format: RequestFormat = RequestFormat.JsonBatch,
     environment: String? = null,
+    info: Map<String, String> = emptyMap(),
     onInvalidEventName: InvalidEventNameAction = InvalidEventNameAction.SEND,
     maxEventSize: Int = 2048,
     logsAppLifecycleEvents: Boolean = false,
@@ -120,12 +122,13 @@ internal fun makeDavy(
     debounceInterval: Duration = 60.seconds,
     debugHistoryLimit: Int = 200,
     lifecycle: LifecycleSource? = null,
-    session: Session = testSession(environment),
+    session: Session = testSession(environment, info),
 ): Davy = Davy(
     configuration = DavyConfiguration(
         endpoint = java.net.URI(endpoint),
         format = format,
         environment = environment,
+        info = info,
         onInvalidEventName = onInvalidEventName,
         maxEventSize = maxEventSize,
         logsAppLifecycleEvents = logsAppLifecycleEvents,

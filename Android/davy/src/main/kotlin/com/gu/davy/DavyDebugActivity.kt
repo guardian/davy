@@ -382,6 +382,7 @@ public class DavyDebugActivity : Activity() {
         content.addView(field("OS", text("${session.os} ${session.osVersion}")))
         content.addView(field("Device Model", text(session.deviceModel ?: "—")))
         content.addView(field("Locale", text(session.locale ?: "—")))
+        session.info?.toSortedMap()?.forEach { (key, value) -> content.addView(field(key, text(value))) }
 
         val json = event.prettyJson
         content.addView(sectionHeader("JSON"))

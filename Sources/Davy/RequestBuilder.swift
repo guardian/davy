@@ -85,6 +85,7 @@ struct RequestBuilder: Sendable {
             ("osVersion", session.osVersion),
             ("deviceModel", session.deviceModel),
             ("locale", session.locale),
+            ("sessionInfo", try session.info.map { String(decoding: try Self.infoEncoder.encode($0), as: UTF8.self) }),
             ("info", try event.info.map { String(decoding: try Self.infoEncoder.encode($0), as: UTF8.self) }),
         ]
         let query = parameters.compactMap { name, value in

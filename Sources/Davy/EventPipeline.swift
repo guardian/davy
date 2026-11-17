@@ -48,6 +48,9 @@ struct RetryPolicy: Sendable {
 actor EventPipeline {
     enum Command: Sendable {
         case log(EventRecord)
+        /// Merges the dictionary into the current session's `info` and logs the
+        /// `"session_updated"` breadcrumb.
+        case addSessionInfo([String: String], EventRecord)
         /// Sends all pending events, ignoring any retry backoff but not a server-requested pause.
         /// Resumes the continuation once done.
         case flush(CheckedContinuation<Void, Never>?)
@@ -68,7 +71,7 @@ actor EventPipeline {
     }
 
     private let logger = Logger(subsystem: "Davy", category: "EventPipeline")
-    private let session: Session
+    private var session: Session
     private let configuration: DavyConfiguration
     private let batchSize: Int
     private let eventsPerRequest: Int
@@ -162,6 +165,9 @@ actor EventPipeline {
     private func handle(_ command: Command) {
         switch command {
         case let .log(record):
+            persist(record)
+        case let .addSessionInfo(info, record):
+            session = session.addingInfo(info)
             persist(record)
         case let .flush(continuation):
             requestSend(force: true)
@@ -339,9 +345,10 @@ actor EventPipeline {
             let decoded = decode(batch)
             guard let session = decoded.first?.pending.session else { continue }
 
-            // Each request carries a single session, so take the leading run of events from the
-            // oldest session; any later sessions go in the next request.
-            let run = decoded.prefix { $0.pending.session.id == session.id }
+            // Each request carries a single session, so take the leading run of events with the
+            // same session; any later sessions (or later `session.info` values) go in the next
+            // request.
+            let run = decoded.prefix { $0.pending.session == session }
             return Delivery(stored: run.map(\.stored), session: session, events: run.map(\.pending.event))
         }
     }

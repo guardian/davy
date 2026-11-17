@@ -64,7 +64,7 @@ public final class Davy: Sendable {
         notificationCenter: NotificationCenter? = .default
     ) {
         self.configuration = configuration
-        let session = Session.start(environment: configuration.environment)
+        let session = Session.start(environment: configuration.environment, info: configuration.info)
         self.sessionID = session.id
 
         let (stream, commands) = AsyncStream.makeStream(of: EventPipeline.Command.self)
@@ -172,6 +172,19 @@ public final class Davy: Sendable {
         case .send:
             return event
         }
+    }
+
+    /// Adds `info` to this session's `info`, replacing any existing values for the same keys, and
+    /// logs a `"session_updated"` breadcrumb.
+    ///
+    /// Returns immediately; the update and breadcrumb are processed in order with ``log(_:)``, so
+    /// the `"session_updated"` breadcrumb and every event logged after this call carry the updated
+    /// `session.info` (and in JSON batches, each change starts a new batch). As with event `info`,
+    /// don't include personal data or values that identify a person or device across sessions.
+    public func addSessionInfo(_ info: [String: String]) {
+        let timestamp = Date.now
+        let record = EventRecord(.breadcrumb(Event.sessionUpdatedName, info: info), timestamp: timestamp)
+        commands.yield(.addSessionInfo(info, record))
     }
 
     /// Sends all pending events now, bypassing the debounce interval and any retry backoff, but not

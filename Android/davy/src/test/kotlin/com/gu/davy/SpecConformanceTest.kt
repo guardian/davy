@@ -53,6 +53,7 @@ class SpecConformanceTest {
                 osVersion = Session.osVersion("15"),
                 deviceModel = "Pixel 9",
                 locale = Session.locale(Locale.Builder().setLanguage("es").setRegion("419").build()),
+                info = mapOf("edition" to "uk", "tier" to "supporter"),
             ),
             Session(
                 id = UUID.randomUUID(),

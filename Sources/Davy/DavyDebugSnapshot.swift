@@ -112,6 +112,10 @@ extension DavyDebugSnapshot {
         /// ``Davy/sessionID`` for events left over from a previous launch.
         public var sessionID: UUID { session.id }
 
+        /// The session's additional details, set with ``DavyConfiguration/info`` when the session
+        /// started.
+        public var sessionInfo: [String: String] { session.info ?? [:] }
+
         var isError: Bool { record.type == .error }
 
         /// The event and its session as indented JSON with sorted keys, the way they're stored on

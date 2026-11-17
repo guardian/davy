@@ -47,6 +47,9 @@ extension Davy.Event {
     /// ``DavyConfiguration/logsAppLifecycleEvents`` is set.
     static let appBackgrounded = Self.breadcrumb("app_backgrounded")
 
+    /// Logged by ``Davy/addSessionInfo(_:)`` after updating the session's `info`.
+    static let sessionUpdatedName = "session_updated"
+
     var name: String {
         switch self {
         case let .breadcrumb(name, _), let .error(name, _):

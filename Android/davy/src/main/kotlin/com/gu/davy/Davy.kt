@@ -50,7 +50,7 @@ public class Davy internal constructor(
      */
     public constructor(context: Context, configuration: DavyConfiguration) : this(
         configuration = configuration,
-        session = Session.start(context, configuration.environment),
+        session = Session.start(context, configuration.environment, configuration.info),
         storageDirectory = configuration.storageDirectory ?: defaultStorageDirectory(context),
         transport = HttpUrlConnectionTransport(),
         retryPolicy = RetryPolicy(),
@@ -133,6 +133,20 @@ public class Davy internal constructor(
     internal fun logDuration(name: String, startNanos: Long) {
         val milliseconds = ((System.nanoTime() - startNanos) / 1_000_000.0).roundToLong()
         log(Event.Breadcrumb(name, mapOf(Event.DURATION_INFO_KEY to milliseconds.toString())))
+    }
+
+    /**
+     * Adds [info] to this session's `info`, replacing any existing values for the same keys, and
+     * logs a `session_updated` breadcrumb.
+     *
+     * Returns immediately; the update and breadcrumb are processed in order with [log], so the
+     * `session_updated` breadcrumb and every event logged after this call carry the updated
+     * `session.info` (and in JSON batches, each change starts a new batch). As with event `info`,
+     * don't include personal data or values that identify a person or device across sessions.
+     */
+    public fun addSessionInfo(info: Map<String, String>) {
+        val record = EventRecord.from(Event.Breadcrumb(Event.SESSION_UPDATED_NAME, info), now())
+        pipeline.addSessionInfo(info, record)
     }
 
     /**

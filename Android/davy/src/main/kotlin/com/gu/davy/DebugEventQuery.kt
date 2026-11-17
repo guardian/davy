@@ -13,13 +13,15 @@ internal sealed class DebugEventStatus {
 /** An event in the debug list, pending or sent. */
 internal class DebugEventItem(val event: DavyDebugSnapshot.LoggedEvent, val status: DebugEventStatus) {
     /**
-     * Whether the event's name, an `info` key or value, or its ID contains [searchText], ignoring
-     * case and surrounding spaces. Empty text matches every event.
+     * Whether the event's name, an `info` or `sessionInfo` key or value, or its ID contains
+     * [searchText], ignoring case and surrounding spaces. Empty text matches every event.
      */
     fun matches(searchText: String): Boolean {
         val text = searchText.trim()
         if (text.isEmpty()) return true
-        val fields = listOf(event.name, DavyJson.uuid(event.id)) + event.info.flatMap { listOf(it.key, it.value) }
+        val fields = listOf(event.name, DavyJson.uuid(event.id)) +
+            event.info.flatMap { listOf(it.key, it.value) } +
+            event.sessionInfo.flatMap { listOf(it.key, it.value) }
         return fields.any { it.contains(text, ignoreCase = true) }
     }
 

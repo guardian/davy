@@ -72,6 +72,9 @@ public data class DavyDebugSnapshot(
         /** The ID of the session the event was logged in, which differs from [Davy.sessionId] for events left over from a previous launch. */
         public val sessionId: UUID get() = session.id
 
+        /** The session's additional details, set with [DavyConfiguration.info] when the session started. */
+        public val sessionInfo: Map<String, String> get() = session.info.orEmpty()
+
         /** Whether the event is an error rather than a breadcrumb. */
         public val isError: Boolean get() = record.type == EventRecord.Type.ERROR
 

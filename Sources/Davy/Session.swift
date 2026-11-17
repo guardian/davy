@@ -23,9 +23,51 @@ struct Session: Codable, Sendable, Hashable {
     let deviceModel: String?
     /// The device's language and region, for example `"en_GB"`, without any custom locale settings.
     let locale: String?
+    /// ``DavyConfiguration/info`` and any entries added with ``Davy/addSessionInfo(_:)``, omitted
+    /// when empty.
+    let info: [String: String]?
+
+    init(
+        id: UUID,
+        environment: String?,
+        appVersion: String?,
+        build: String?,
+        os: String,
+        osVersion: String,
+        deviceModel: String?,
+        locale: String?,
+        info: [String: String]? = nil
+    ) {
+        self.id = id
+        self.environment = environment
+        self.appVersion = appVersion
+        self.build = build
+        self.os = os
+        self.osVersion = osVersion
+        self.deviceModel = deviceModel
+        self.locale = locale
+        self.info = info?.isEmpty == true ? nil : info
+    }
+
+    /// Returns a copy of this session with `additionalInfo` merged into ``info``, replacing any
+    /// existing values for the same keys.
+    func addingInfo(_ additionalInfo: [String: String]) -> Session {
+        let merged = (info ?? [:]).merging(additionalInfo) { _, new in new }
+        return Session(
+            id: id,
+            environment: environment,
+            appVersion: appVersion,
+            build: build,
+            os: os,
+            osVersion: osVersion,
+            deviceModel: deviceModel,
+            locale: locale,
+            info: merged
+        )
+    }
 
     /// Captures the current app and device data for a new session.
-    static func start(environment: String?) -> Session {
+    static func start(environment: String?, info: [String: String] = [:]) -> Session {
         Session(
             id: UUID(),
             environment: environment,
@@ -34,7 +76,8 @@ struct Session: Codable, Sendable, Hashable {
             os: os,
             osVersion: osVersion,
             deviceModel: deviceModel,
-            locale: locale
+            locale: locale,
+            info: info
         )
     }
 

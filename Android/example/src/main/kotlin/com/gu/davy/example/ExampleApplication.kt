@@ -43,6 +43,9 @@ class ExampleApplication : Application() {
         format = RequestFormat.JsonBatch,
         // Lets you separate test data from real usage, for example "beta" for internal test tracks.
         environment = if (BuildConfig.DEBUG) "debug" else "production",
+        // Additional details about the app and session, sent with every event in `session.info` (or
+        // the `sessionInfo` query parameter). Don't include personal data or identifiers.
+        info = mapOf("edition" to "uk"),
         // Throw on names that aren't lower snake case (like "checkoutStarted") in debug builds so
         // they're fixed before shipping, but ignore them in release builds. `SEND_ERROR` reports them
         // as a "davy_invalid_event_name" error instead, and `LOG_ERROR` discards them.

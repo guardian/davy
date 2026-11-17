@@ -7,7 +7,7 @@ import java.util.UUID
 
 /** The same cases as the Swift client's `DebugEventFilterTests`. */
 class DebugEventQueryTest {
-    private val session = testSession()
+    private val session = testSession(info = mapOf("edition" to "Australia"))
 
     private fun loggedEvent(event: Event, timestampMillis: Long, id: UUID = UUID.randomUUID()) =
         DavyDebugSnapshot.LoggedEvent(EventRecord.from(event, timestampMillis, id), session)
@@ -75,6 +75,8 @@ class DebugEventQueryTest {
         assertEquals(listOf("checkout_started"), names(searchText = "cart"))
         assertEquals(listOf("payment_declined"), names(searchText = "Reason"))
         assertEquals(listOf("payment_declined"), names(searchText = " 9c5b94b1 "))
+        assertEquals(names(), names(searchText = "EDITION"))
+        assertEquals(names(), names(searchText = "australia"))
         assertEquals(emptyList<String>(), names(searchText = "refund"))
         assertEquals(emptyList<String>(), names(DebugEventFilter.PENDING, searchText = "payment"))
     }

@@ -16,6 +16,7 @@ private struct ReceivedSession: Decodable {
     let osVersion: String
     let deviceModel: String?
     let locale: String?
+    let info: [String: String]?
 }
 
 private struct ReceivedEvent: Decodable {
@@ -102,6 +103,7 @@ private func makeDavy(
     endpoint: String = "https://example.com/events",
     format: DavyConfiguration.RequestFormat = .jsonBatch,
     environment: String? = nil,
+    info: [String: String] = [:],
     onInvalidEventName: DavyConfiguration.InvalidEventNameAction = .send,
     maxEventSize: Int = 2048,
     logsAppLifecycleEvents: Bool = false,
@@ -116,6 +118,7 @@ private func makeDavy(
             endpoint: URL(string: endpoint)!,
             format: format,
             environment: environment,
+            info: info,
             onInvalidEventName: onInvalidEventName,
             maxEventSize: maxEventSize,
             logsAppLifecycleEvents: logsAppLifecycleEvents,
@@ -155,7 +158,12 @@ struct DavyTests {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
-        let telemetry = makeDavy(directory: directory, transport: transport, environment: "beta")
+        let telemetry = makeDavy(
+            directory: directory,
+            transport: transport,
+            environment: "beta",
+            info: ["edition": "uk", "tier": "supporter"]
+        )
 
         telemetry.log(.breadcrumb("checkout_started"))
         telemetry.log(.error("payment_declined", info: ["reason": "card_expired"]))
@@ -174,7 +182,7 @@ struct DavyTests {
             #expect(abs(timestamp.timeIntervalSinceNow) < 60)
         }
 
-        let expected = Session.start(environment: "beta")
+        let expected = Session.start(environment: "beta", info: ["edition": "uk", "tier": "supporter"])
         let session = payload.session
         #expect(session.id == telemetry.sessionID)
         #expect(session.environment == "beta")
@@ -185,6 +193,30 @@ struct DavyTests {
         #expect(session.deviceModel == expected.deviceModel)
         #expect(session.deviceModel?.isEmpty == false)
         #expect(session.locale == expected.locale)
+        #expect(session.info == ["edition": "uk", "tier": "supporter"])
+    }
+
+    @Test func addSessionInfoReplacesMatchingKeysAndLogsASessionUpdatedBreadcrumb() async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transport = MockTransport()
+        let telemetry = makeDavy(directory: directory, transport: transport, info: ["edition": "uk", "theme": "dark"])
+
+        telemetry.log(.breadcrumb("app_launched"))
+        telemetry.addSessionInfo(["edition": "au", "tier": "supporter"])
+        telemetry.log(.breadcrumb("article_opened"))
+        await telemetry.flushAndWait()
+
+        let payloads = await transport.payloads
+        #expect(payloads.count == 2)
+        #expect(payloads.map(\.session.id) == [telemetry.sessionID, telemetry.sessionID])
+        #expect(payloads[0].session.info == ["edition": "uk", "theme": "dark"])
+        #expect(payloads[0].events.map(\.name) == ["app_launched"])
+
+        #expect(payloads[1].session.info == ["edition": "au", "theme": "dark", "tier": "supporter"])
+        #expect(payloads[1].events.map(\.name) == ["session_updated", "article_opened"])
+        #expect(payloads[1].events.map(\.type) == ["breadcrumb", "breadcrumb"])
+        #expect(payloads[1].events[0].loggedInfo == ["edition": "au", "tier": "supporter"])
     }
 
     @Test func errorsHaveDiagnosticsAddedToInfoButBreadcrumbsDoNot() async throws {
@@ -465,6 +497,7 @@ struct DavyTests {
             endpoint: "https://example.com/events?key=abc",
             format: .queryString(method: method),
             environment: "beta",
+            info: ["edition": "uk"],
             headers: ["Authorization": "Bearer token"]
         )
 
@@ -495,6 +528,7 @@ struct DavyTests {
             #expect(query["osVersion"] == expected.osVersion)
             #expect(query["deviceModel"] == expected.deviceModel)
             #expect(query["locale"] == expected.locale)
+            #expect(query["sessionInfo"] == #"{"edition":"uk"}"#)
             let timestamp = try Date(try #require(query["timestamp"]), strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true))
             #expect(abs(timestamp.timeIntervalSinceNow) < 60)
         }
@@ -765,7 +799,7 @@ struct DavyTests {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
-        let telemetry = makeDavy(directory: directory, transport: transport)
+        let telemetry = makeDavy(directory: directory, transport: transport, info: ["edition": "uk"])
 
         telemetry.log(.breadcrumb("checkout_started"))
         telemetry.log(.error("payment_declined", info: ["reason": "card_expired"]))
@@ -774,6 +808,7 @@ struct DavyTests {
         #expect(snapshot.pending.map(\.name) == ["checkout_started", "payment_declined"])
         #expect(snapshot.pending.map(\.isError) == [false, true])
         #expect(snapshot.pending.map { $0.info["reason"] } == [nil, "card_expired"])
+        #expect(snapshot.pending.map(\.sessionInfo) == [["edition": "uk"], ["edition": "uk"]])
         #expect(snapshot.pending.map(\.sessionID) == [telemetry.sessionID, telemetry.sessionID])
         #expect(Set(snapshot.pending.map(\.id)).count == 2)
         #expect(snapshot.sent.isEmpty)

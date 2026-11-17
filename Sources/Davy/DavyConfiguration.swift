@@ -16,6 +16,13 @@ public struct DavyConfiguration: Sendable {
     /// so telling them apart needs a runtime check or a separate build configuration.
     public var environment: String?
 
+    /// Additional details about the app and session, sent with every event as the request's
+    /// `session.info` (or `sessionInfo` query parameter). Omitted when empty.
+    ///
+    /// As with event ``Event/info``, don't include personal data or values that identify a person
+    /// or device across sessions.
+    public var info: [String: String]
+
     /// What ``Davy/log(_:)`` does with an event whose name isn't lower snake case, such as
     /// `"checkoutStarted"` or `"checkout-started"` instead of `"checkout_started"`.
     ///
@@ -83,6 +90,7 @@ public struct DavyConfiguration: Sendable {
     ///   - endpoint: The URL that events are sent to.
     ///   - format: How events are encoded into requests. Defaults to ``RequestFormat/jsonBatch``.
     ///   - environment: The kind of build sending events, for example `"debug"`, `"beta"`, or `"production"`.
+    ///   - info: Additional details sent with every event in `session.info`.
     ///   - onInvalidEventName: What to do with events whose names aren't lower snake case. Defaults to
     ///     ``InvalidEventNameAction/send``.
     ///   - maxEventSize: The largest an event can be, in bytes, as a query string URL. Defaults to 2,048.
@@ -98,6 +106,7 @@ public struct DavyConfiguration: Sendable {
         endpoint: URL,
         format: RequestFormat = .jsonBatch,
         environment: String? = nil,
+        info: [String: String] = [:],
         onInvalidEventName: InvalidEventNameAction = .send,
         maxEventSize: Int = 2048,
         logsAppLifecycleEvents: Bool = false,
@@ -111,6 +120,7 @@ public struct DavyConfiguration: Sendable {
         self.endpoint = endpoint
         self.format = format
         self.environment = environment
+        self.info = info
         self.onInvalidEventName = onInvalidEventName
         self.maxEventSize = maxEventSize
         self.logsAppLifecycleEvents = logsAppLifecycleEvents
