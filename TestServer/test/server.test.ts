@@ -8,7 +8,6 @@ import { inspectRequest, Spec, type Headers } from "../src/spec.ts";
 
 interface Fixture {
   name: string;
-  format: { type: string; method?: string };
   session: object;
   events: object[];
   sentAt: string;
@@ -17,16 +16,12 @@ interface Fixture {
 
 const spec = new Spec(fileURLToPath(new URL("../../Spec/openapi.yaml", import.meta.url)));
 const fixtures: Fixture[] = JSON.parse(readFileSync(new URL("../../Spec/fixtures.json", import.meta.url), "utf8")).cases;
-const queryPostFixture = fixtures.find((f) => f.format.type === "queryString" && f.format.method === "POST")!;
 
 function fixtureRequest({ expected }: Fixture): [method: string, target: string, headers: Headers, body: Buffer] {
   const target = expected.url.replace(/^https?:\/\/[^/]+/, "");
   const body = expected.body === undefined ? Buffer.alloc(0) : Buffer.from(JSON.stringify(expected.body));
   return [expected.method, target, Object.entries(expected.headers), body];
 }
-
-/** The JSON batch and JSON event formats send the same body, so the server can't tell them apart. */
-const serverFormat = (fixture: Fixture) => (fixture.format.type === "queryString" ? "queryString" : "json");
 
 function assertProblem(problems: string[], expected: string): void {
   assert.ok(problems.some((problem) => problem.includes(expected)), `No problem includes "${expected}": ${JSON.stringify(problems)}`);
@@ -37,30 +32,11 @@ describe("inspectRequest", () => {
     test(`reads the fixture "${fixture.name}" without problems`, () => {
       const request = inspectRequest(spec, ...fixtureRequest(fixture))!;
       assert.deepEqual(request.problems, []);
-      assert.equal(request.format, serverFormat(fixture));
       assert.deepEqual(request.session, fixture.session);
       assert.deepEqual(request.events, fixture.events);
       assert.equal(request.sentAt, fixture.sentAt);
     });
   }
-
-  test("reports query strings that break the spec", () => {
-    const [method, target, headers, body] = fixtureRequest(queryPostFixture);
-    const withInfo = (json: string) => `${target.split("&info=")[0]}&info=${encodeURIComponent(json)}`;
-    const cases: [string, string][] = [
-      [target.replace("Pixel%209", "Pixel+9"), "deviceModel isn't percent-encoded"],
-      [target.replace("&type=error", "") + "&type=error", "Query parameters are sent in the order"],
-      [`${target}&extra=1`, "The query parameter extra isn't in the spec"],
-      [target.replace("&sessionId=6F9619FF-8B86-D011-B42D-00C04FC964FF", ""), "sessionId is required but missing"],
-      [target.replace("os=Android", "os=android"), "The query parameter os isn't one of"],
-      [withInfo('{"reason":"x","cpu_percent":"1"}'), "info's keys aren't sorted"],
-      [withInfo('{"2":"x","10":"y"}'), "info's keys aren't sorted"],
-      [withInfo('{"a": "b"}'), "info isn't compact JSON"],
-    ];
-    for (const [modified, expected] of cases) {
-      assertProblem(inspectRequest(spec, method, modified, headers, body)!.problems, expected);
-    }
-  });
 
   test("reports JSON batches that break the spec", () => {
     const body = Buffer.from(JSON.stringify({
@@ -100,7 +76,7 @@ describe("server", () => {
 
   const requests = async (): Promise<RecordedRequest[]> => (await (await fetch(`${base}/_/requests`)).json()).requests;
 
-  test("records every format and responds as configured", async () => {
+  test("records every fixture and responds as configured", async () => {
     for (const fixture of fixtures) {
       const response = await send(fixtureRequest(fixture));
       assert.equal(response.status, 204, fixture.name);
@@ -112,7 +88,6 @@ describe("server", () => {
     assert.equal(throttled.headers.get("Retry-After"), "30");
 
     const recorded = await requests();
-    assert.deepEqual(recorded.map((r) => r.format), [...fixtures.map(serverFormat), "json"]);
     assert.deepEqual(recorded.map((r) => r.sentAt), [...fixtures.map((f) => f.sentAt), fixtures[0].sentAt]);
     assert.ok(recorded.every((r) => r.problems.length === 0));
     // The first fixture was stored, so its events arriving again are duplicates.

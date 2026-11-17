@@ -25,6 +25,45 @@ extension Davy {
 }
 
 extension Davy.Event {
+    var name: String {
+        switch self {
+        case let .breadcrumb(name, _), let .error(name, _):
+            name
+        }
+    }
+
+    var info: [String: String] {
+        switch self {
+        case let .breadcrumb(_, info), let .error(_, info):
+            info
+        }
+    }
+}
+
+extension Davy.Event {
+    /// Whether `name` is lowercase ASCII letters and digits in words separated by single
+    /// underscores, starting with a letter, for example `"checkout_started"` or `"step_2"`.
+    static func isLowerSnakeCase(_ name: String) -> Bool {
+        let underscore = UInt8(ascii: "_")
+        var previous: UInt8?
+        for byte in name.utf8 {
+            switch byte {
+            case UInt8(ascii: "a")...UInt8(ascii: "z"):
+                break
+            case UInt8(ascii: "0")...UInt8(ascii: "9"):
+                guard previous != nil else { return false }
+            case underscore:
+                guard let previous, previous != underscore else { return false }
+            default:
+                return false
+            }
+            previous = byte
+        }
+        return previous != nil && previous != underscore
+    }
+}
+
+extension Davy.Event {
     /// The name of the error sent in place of an event with an invalid name when
     /// ``DavyConfiguration/onInvalidEventName`` is ``DavyConfiguration/InvalidEventNameAction/sendError``.
     static let invalidNameErrorName = "davy_invalid_event_name"
@@ -49,41 +88,6 @@ extension Davy.Event {
 
     /// Logged by ``Davy/addSessionInfo(_:)`` after updating the session's `info`.
     static let sessionUpdatedName = "session_updated"
-
-    var name: String {
-        switch self {
-        case let .breadcrumb(name, _), let .error(name, _):
-            name
-        }
-    }
-
-    var info: [String: String] {
-        switch self {
-        case let .breadcrumb(_, info), let .error(_, info):
-            info
-        }
-    }
-
-    /// Whether `name` is lowercase ASCII letters and digits in words separated by single
-    /// underscores, starting with a letter, for example `"checkout_started"` or `"step_2"`.
-    static func isLowerSnakeCase(_ name: String) -> Bool {
-        let underscore = UInt8(ascii: "_")
-        var previous: UInt8?
-        for byte in name.utf8 {
-            switch byte {
-            case UInt8(ascii: "a")...UInt8(ascii: "z"):
-                break
-            case UInt8(ascii: "0")...UInt8(ascii: "9"):
-                guard previous != nil else { return false }
-            case underscore:
-                guard let previous, previous != underscore else { return false }
-            default:
-                return false
-            }
-            previous = byte
-        }
-        return previous != nil && previous != underscore
-    }
 }
 
 /// A logged ``Davy/Event`` as it is sent in the request's `events` array:

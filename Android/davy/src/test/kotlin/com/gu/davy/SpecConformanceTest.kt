@@ -20,20 +20,10 @@ class SpecConformanceTest {
     /** The example endpoint used by the spec's server and paths. */
     private val endpoint = URI("https://api.example.com/events")
 
-    private val formats = listOf(
-        RequestFormat.JsonBatch,
-        RequestFormat.JsonEvent(),
-        RequestFormat.QueryString(HttpMethod.POST),
-        RequestFormat.QueryString(HttpMethod.GET),
-    )
-
-    private fun requests(format: RequestFormat, session: Session, events: List<EventRecord>): List<HttpRequest> {
-        val builder = RequestBuilder(DavyConfiguration(endpoint, format))
+    private fun requests(session: Session, events: List<EventRecord>): List<HttpRequest> {
+        val builder = RequestBuilder(DavyConfiguration(endpoint))
         val sentAt = System.currentTimeMillis()
-        return when (format) {
-            RequestFormat.JsonBatch -> listOf(builder.request(session, events, sentAt))
-            is RequestFormat.JsonEvent, is RequestFormat.QueryString -> events.map { builder.request(session, listOf(it), sentAt) }
-        }
+        return listOf(builder.request(session, events, sentAt))
     }
 
     private fun assertConforms(requests: List<HttpRequest>) {
@@ -67,30 +57,28 @@ class SpecConformanceTest {
             ),
         )
 
-        for (format in formats) {
-            for (session in sessions) {
-                val directory = temporaryDirectory()
-                val transport = MockTransport()
-                val telemetry = makeDavy(directory, transport, endpoint = endpoint.toString(), format = format, session = session)
+        for (session in sessions) {
+            val directory = temporaryDirectory()
+            val transport = MockTransport()
+            val telemetry = makeDavy(directory, transport, endpoint = endpoint.toString(), session = session)
 
-                telemetry.log(Event.Breadcrumb("checkout_started"))
-                telemetry.log(Event.Breadcrumb("payment_selected", mapOf("payment_method" to "google_pay", "path" to "a/b+c &=?#", "note" to "café ☕️")))
-                // Sent as is, since `onInvalidEventName` defaults to `SEND`.
-                telemetry.log(Event.Breadcrumb("Checkout Started/Now"))
-                telemetry.log(Event.Error("payment_declined", mapOf("reason" to "card_expired")))
-                telemetry.log(java.io.IOException(), "checkout_failed")
-                telemetry.measure("feed_load") {}
-                // Replaced with a "davy_event_too_large" error.
-                telemetry.log(Event.Breadcrumb("large_event", mapOf("blob" to "x".repeat(3000))))
-                telemetry.flushAndWaitBlocking()
-                telemetry.close()
-                directory.deleteRecursively()
+            telemetry.log(Event.Breadcrumb("checkout_started"))
+            telemetry.log(Event.Breadcrumb("payment_selected", mapOf("payment_method" to "google_pay", "path" to "a/b+c &=?#", "note" to "café ☕️")))
+            // Sent as is, since `onInvalidEventName` defaults to `SEND`.
+            telemetry.log(Event.Breadcrumb("Checkout Started/Now"))
+            telemetry.log(Event.Error("payment_declined", mapOf("reason" to "card_expired")))
+            telemetry.log(java.io.IOException(), "checkout_failed")
+            telemetry.measure("feed_load") {}
+            // Replaced with a "davy_event_too_large" error.
+            telemetry.log(Event.Breadcrumb("large_event", mapOf("blob" to "x".repeat(5000))))
+            telemetry.flushAndWaitBlocking()
+            telemetry.close()
+            directory.deleteRecursively()
 
-                val requests = transport.requests
-                val sentEvents = requests.sumOf { request -> request.body?.let { JSONObject(it.decodeToString()).getJSONArray("events").length() } ?: 1 }
-                assertEquals("$format", 7, sentEvents)
-                assertConforms(requests)
-            }
+            val requests = transport.requests
+            val sentEvents = requests.sumOf { request -> JSONObject(request.body.decodeToString()).getJSONArray("events").length() }
+            assertEquals(7, sentEvents)
+            assertConforms(requests)
         }
     }
 
@@ -98,9 +86,7 @@ class SpecConformanceTest {
     fun aWholeSecondIsStillSentWithMilliseconds() {
         val session = Session(UUID.randomUUID(), null, null, null, Session.OS, "15.0.0", null, null)
         val event = EventRecord.from(Event.Breadcrumb("checkout_started"), timestampMillis = 1_700_000_000_000)
-        for (format in formats) {
-            assertConforms(requests(format, session, listOf(event)))
-        }
+        assertConforms(requests(session, listOf(event)))
     }
 
     @Test
@@ -111,17 +97,14 @@ class SpecConformanceTest {
         for (index in 0 until fixtures.length()) {
             val fixture = fixtures.getJSONObject(index)
             val name = fixture.getString("name")
-            val format = fixture.getJSONObject("format").let {
-                when (val type = it.getString("type")) {
-                    "jsonBatch" -> RequestFormat.JsonBatch
-                    "jsonEvent" -> RequestFormat.JsonEvent()
-                    "queryString" -> RequestFormat.QueryString(HttpMethod.valueOf(it.getString("method")))
-                    else -> throw AssertionError("$name: unknown format $type")
-                }
-            }
             val session = DavyJson.parseSession(fixture.getJSONObject("session"))
             val events = fixture.getJSONArray("events").objects().map(DavyJson::parseEvent)
-            val builder = RequestBuilder(URI(fixture.getString("endpoint")), fixture.getJSONObject("headers").strings(), format)
+            val builder = RequestBuilder(
+                DavyConfiguration(
+                    endpoint = URI(fixture.getString("endpoint")),
+                    headers = fixture.getJSONObject("headers").strings(),
+                ),
+            )
             val request = builder.request(session, events, DavyJson.parseTimestamp(fixture.getString("sentAt")))
             val expected = fixture.getJSONObject("expected")
 
@@ -132,9 +115,9 @@ class SpecConformanceTest {
                 expected.getJSONObject("headers").strings().mapKeys { it.key.lowercase() },
                 request.headers.mapKeys { it.key.lowercase() },
             )
-            assertEquals(name, expected.opt("body")?.let(Json::of), request.body?.let { Json.parse(it.decodeToString()) })
-            if (format is RequestFormat.QueryString) {
-                assertEquals(name, expected.getString("url").toByteArray().size, builder.size(events.single(), session))
+            assertEquals(name, expected.opt("body")?.let(Json::of), Json.parse(request.body.decodeToString()))
+            if (events.size == 1) {
+                assertEquals(name, request.body.size, builder.size(events.single(), session))
             }
         }
     }
@@ -145,30 +128,20 @@ class SpecConformanceTest {
         val event = EventRecord.from(Event.Breadcrumb("checkout_started"), timestampMillis = DavyJson.parseTimestamp(timestamp))
         val session = Session(UUID.randomUUID(), null, null, null, Session.OS, "15.0.0", null, null)
 
-        for (format in formats) {
-            val builder = RequestBuilder(DavyConfiguration(endpoint, format))
-            for (sentAt in listOf("2023-11-14T22:13:25.000Z", "2023-11-14T22:13:25.007Z")) {
-                val request = builder.request(session, listOf(event), DavyJson.parseTimestamp(sentAt))
-                val body = request.body
-                if (body != null) {
-                    val payload = JSONObject(body.decodeToString())
-                    assertEquals("$format", sentAt, payload.getString("sentAt"))
-                    assertTrue("$format", !payload.has("sent_at"))
-                    assertEquals("$format", timestamp, payload.getJSONArray("events").getJSONObject(0).getString("timestamp"))
-                } else {
-                    val query = queryParameters(request)
-                    assertEquals("$format", sentAt, query["sentAt"])
-                    assertTrue("$format", "sent_at" !in query)
-                    assertEquals("$format", timestamp, query["timestamp"])
-                }
-                assertConforms(listOf(request))
-            }
+        val builder = RequestBuilder(DavyConfiguration(endpoint))
+        for (sentAt in listOf("2023-11-14T22:13:25.000Z", "2023-11-14T22:13:25.007Z")) {
+            val request = builder.request(session, listOf(event), DavyJson.parseTimestamp(sentAt))
+            val payload = JSONObject(request.body.decodeToString())
+            assertEquals(sentAt, payload.getString("sentAt"))
+            assertTrue(!payload.has("sent_at"))
+            assertEquals(timestamp, payload.getJSONArray("events").getJSONObject(0).getString("timestamp"))
+            assertConforms(listOf(request))
         }
     }
 
     @Test
     fun everyStatusCodeIsHandledAsTheSpecDescribes() {
-        assertEquals(3, spec.operations.size)
+        assertEquals(1, spec.operations.size)
         val mismatches = mutableListOf<String>()
 
         for ((name, operation) in spec.operations) {
@@ -177,7 +150,7 @@ class SpecConformanceTest {
                 val outcome = DeliveryOutcome.of(statusCode, { if (it.equals("Retry-After", ignoreCase = true)) "120" else null })
                 val outcomeWithoutRetryAfter = DeliveryOutcome.of(statusCode, { null })
                 val isAsDescribed = when (response) {
-                    "Stored", "StoredNoStore" -> outcome is DeliveryOutcome.Delivered && outcomeWithoutRetryAfter is DeliveryOutcome.Delivered
+                    "Stored" -> outcome is DeliveryOutcome.Delivered && outcomeWithoutRetryAfter is DeliveryOutcome.Delivered
                     "Rejected" -> outcome is DeliveryOutcome.Rejected && outcomeWithoutRetryAfter is DeliveryOutcome.Rejected
                     // Without a valid `Retry-After`, events are retried with backoff.
                     "Throttled" -> outcome is DeliveryOutcome.Throttled && outcomeWithoutRetryAfter is DeliveryOutcome.Failed
@@ -194,46 +167,35 @@ class SpecConformanceTest {
     fun requestsThatBreakTheSpecAreCaught() {
         val session = Session(UUID.randomUUID(), "beta", "1.2.0", "45", Session.OS, "15.0.0", "Pixel 9", "en_GB")
         val event = EventRecord.from(Event.Error("payment_declined", mapOf("reason" to "card_expired")), System.currentTimeMillis())
-        val queryString = requests(RequestFormat.QueryString(), session, listOf(event)).single()
-        val batch = requests(RequestFormat.JsonBatch, session, listOf(event)).single()
-        assertConforms(listOf(queryString, batch))
+        val batch = requests(session, listOf(event)).single()
+        assertConforms(listOf(batch))
 
         val breakages = mapOf(
-            "lowercase event ID" to changingQueryItem(queryString, "eventId") { it.lowercase() },
-            "timestamp without milliseconds" to changingQueryItem(queryString, "timestamp") { "2026-11-09T11%3A38%3A55Z" },
-            "unknown OS" to changingQueryItem(queryString, "os") { "Windows" },
-            "empty info" to changingQueryItem(queryString, "info") { "%7B%7D" },
-            "empty name" to withUrl(queryString, queryString.url.replace("/events/payment_declined", "/events/")),
-            "missing session ID" to changingQuery(queryString) { items -> items.filter { it.first != "sessionId" } },
-            "unknown parameter" to changingQuery(queryString) { it + ("deviceId" to "123") },
-            "parameters out of order" to changingQuery(queryString) { listOf(it[1], it[0]) + it.drop(2) },
-            "unencoded character" to changingQueryItem(queryString, "timestamp") { OpenApiSpec.percentDecoded(it)!! },
+            "lowercase event ID" to changingBody(batch) {
+                val first = it.getJSONArray("events").getJSONObject(0)
+                first.put("id", first.getString("id").lowercase())
+            },
+            "timestamp without milliseconds" to changingBody(batch) {
+                it.getJSONArray("events").getJSONObject(0).put("timestamp", "2026-11-09T11:38:55Z")
+            },
+            "unknown OS" to changingBody(batch) { it.getJSONObject("session").put("os", "Windows") },
+            "empty info" to changingBody(batch) { it.getJSONArray("events").getJSONObject(0).put("info", JSONObject()) },
+            "empty name" to changingBody(batch) { it.getJSONArray("events").getJSONObject(0).put("name", "") },
+            "missing session ID" to changingBody(batch) { it.getJSONObject("session").remove("id") },
             "extra session field" to changingBody(batch) { it.getJSONObject("session").put("deviceId", "123") },
             "number in info" to changingBody(batch) { it.getJSONArray("events").getJSONObject(0).getJSONObject("info").put("cpu_percent", 3) },
             "no events" to changingBody(batch) { it.put("events", org.json.JSONArray()) },
             "missing sentAt in body" to changingBody(batch) { it.remove("sentAt") },
             "sentAt without milliseconds" to changingBody(batch) { it.put("sentAt", "2026-11-09T11:39:00Z") },
-            "missing sentAt in query" to changingQuery(queryString) { items -> items.filter { it.first != "sentAt" } },
+            "query string on batch endpoint" to HttpRequest(batch.method, "${batch.url}?key=123", batch.headers, batch.body),
         )
         val missed = breakages.filter { (_, request) -> spec.violations(request).isEmpty() }.keys
         assertTrue("Not caught: $missed", missed.isEmpty())
     }
 
-    private fun withUrl(request: HttpRequest, url: String) = HttpRequest(request.method, url, request.headers, request.body)
-
-    /** [request] with its percent-encoded query items changed by [change]. */
-    private fun changingQuery(request: HttpRequest, change: (List<Pair<String, String>>) -> List<Pair<String, String>>): HttpRequest {
-        val (base, query) = request.url.split('?', limit = 2)
-        val items = query.split('&').map { it.split('=', limit = 2).let { parts -> parts[0] to parts[1] } }
-        return withUrl(request, "$base?" + change(items).joinToString("&") { "${it.first}=${it.second}" })
-    }
-
-    private fun changingQueryItem(request: HttpRequest, name: String, transform: (String) -> String) =
-        changingQuery(request) { items -> items.map { if (it.first == name) it.first to transform(it.second) else it } }
-
     /** [request] with its JSON body changed by [change]. */
     private fun changingBody(request: HttpRequest, change: (JSONObject) -> Unit): HttpRequest {
-        val payload = JSONObject(request.body!!.decodeToString()).also(change)
+        val payload = JSONObject(request.body.decodeToString()).also(change)
         return HttpRequest(request.method, request.url, request.headers, payload.toString().toByteArray())
     }
 }

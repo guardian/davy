@@ -15,7 +15,7 @@ Each platform has a debug screen that lists the events waiting to be sent, the e
 - **Search and filtering:** search by name, event or session `info` key or value, or event ID, ignoring case, and choose **Show** to list only pending, sent, rejected, or error events.
 - **Event details:** select an event to see its ID, when it was logged, its status, its `info`, its session data, its JSON, which you can share, and the requests it was sent in.
 - **The requests:** every request sent since launch, newest first, including requests that failed or got no response, with a mark showing whether the server accepted, rejected, or paused it, its status code, how many events it carried, and how long it took. Search by URL or body. On Apple platforms, choose **Requests** at the top; on Android, select **Show Requests**.
-- **Request details:** select a request to see its method, URL, when it was sent, how long it took, the response's status code and what it meant, its events, its headers, its query parameters, and its body as indented JSON, which you can share. Headers are shown as sent, including any `Authorization` header.
+- **Request details:** select a request to see its method, URL, when it was sent, how long it took, the response's status code and what it meant, its events, its headers, and its body as indented JSON, which you can share. Headers are shown as sent, including any `Authorization` header.
 - **Actions:** send pending events now, and clear the sent history and requests.
 
 ## Snapshots

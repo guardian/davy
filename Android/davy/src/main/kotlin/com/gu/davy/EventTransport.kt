@@ -53,11 +53,9 @@ internal class HttpUrlConnectionTransport(private val timeoutMillis: Int = 60_00
             for ((field, value) in request.headers) {
                 connection.setRequestProperty(field, value)
             }
-            request.body?.let { body ->
-                connection.doOutput = true
-                connection.setFixedLengthStreamingMode(body.size)
-                connection.outputStream.use { it.write(body) }
-            }
+            connection.doOutput = true
+            connection.setFixedLengthStreamingMode(request.body.size)
+            connection.outputStream.use { it.write(request.body) }
             val statusCode = connection.responseCode
             // The body is ignored, but reading it lets the connection be reused.
             val stream = if (statusCode >= 400) connection.errorStream else connection.inputStream

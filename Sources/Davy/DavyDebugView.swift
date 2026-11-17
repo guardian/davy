@@ -185,7 +185,7 @@ extension DavyDebugSnapshot.Request {
         let text = searchText.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return true }
         let url = url.absoluteString.removingPercentEncoding ?? url.absoluteString
-        return [url, body ?? ""].contains { $0.localizedCaseInsensitiveContains(text) }
+        return [url, body].contains { $0.localizedCaseInsensitiveContains(text) }
     }
 
     /// `HTTP 200`, or `No response` if none was received.
@@ -194,8 +194,7 @@ extension DavyDebugSnapshot.Request {
     }
 
     /// The body as indented JSON with sorted keys, or as sent if it isn't JSON.
-    var prettyBody: String? {
-        guard let body else { return nil }
+    var prettyBody: String {
         guard let object = try? JSONSerialization.jsonObject(with: Data(body.utf8)),
               let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         else {
@@ -1053,7 +1052,7 @@ private struct DebugRequestDetail: View {
     let events: [(id: UUID, item: DebugEventItem?)]
 
     var body: some View {
-        let queryItems = URLComponents(url: request.url, resolvingAgainstBaseURL: true)?.queryItems ?? []
+        let body = request.prettyBody
         Form {
             Section {
                 DebugField("Method") {
@@ -1123,34 +1122,19 @@ private struct DebugRequestDetail: View {
                 Text(verbatim: "Headers")
             }
             .textSelection(.enabled)
-            if !queryItems.isEmpty {
-                Section {
-                    ForEach(Array(queryItems.enumerated()), id: \.offset) { _, item in
-                        LabeledContent(item.name) {
-                            Text(item.value ?? "")
-                                .font(.caption.monospaced())
-                        }
+            Section {
+                Text(body)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                ShareLink(item: body) {
+                    Label {
+                        Text(verbatim: "Share Body")
+                    } icon: {
+                        Image(systemName: "square.and.arrow.up")
                     }
-                } header: {
-                    Text(verbatim: "Query")
                 }
-                .textSelection(.enabled)
-            }
-            if let body = request.prettyBody {
-                Section {
-                    Text(body)
-                        .font(.caption.monospaced())
-                        .textSelection(.enabled)
-                    ShareLink(item: body) {
-                        Label {
-                            Text(verbatim: "Share Body")
-                        } icon: {
-                            Image(systemName: "square.and.arrow.up")
-                        }
-                    }
-                } header: {
-                    Text(verbatim: "Body")
-                }
+            } header: {
+                Text(verbatim: "Body")
             }
         }
         .formStyle(.grouped)

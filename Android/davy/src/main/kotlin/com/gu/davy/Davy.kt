@@ -59,8 +59,7 @@ public class Davy internal constructor(
     )
 
     /**
-     * A random identifier sent with this instance's events, as the request's `session.id` (or
-     * `sessionId` query parameter).
+     * A random identifier sent with this instance's events, as the request's `session.id`.
      *
      * Generated each time an instance is created, typically once per app launch, and never reused,
      * so it links events within a session without identifying the user or device across sessions.
@@ -141,8 +140,8 @@ public class Davy internal constructor(
      *
      * Returns immediately; the update and breadcrumb are processed in order with [log], so the
      * `session_updated` breadcrumb and every event logged after this call carry the updated
-     * `session.info` (and in JSON batches, each change starts a new batch). As with event `info`,
-     * don't include personal data or values that identify a person or device across sessions.
+     * `session.info` (and each change starts a new batch). As with event `info`, don't include
+     * personal data or values that identify a person or device across sessions.
      */
     public fun addSessionInfo(info: Map<String, String>) {
         val record = EventRecord.from(Event.Breadcrumb(Event.SESSION_UPDATED_NAME, info), now())

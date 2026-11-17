@@ -110,11 +110,10 @@ public data class DavyDebugSnapshot(
      * An HTTP request Davy sent, with how the server responded.
      *
      * @property id A random identifier for the request.
-     * @property method The HTTP method, `POST` or `GET`.
+     * @property method The HTTP method, `POST`.
      * @property url The full URL, including any query string.
-     * @property headers The header fields Davy set: [DavyConfiguration.headers] and, for JSON
-     *   bodies, `Content-Type`.
-     * @property body The JSON body, or `null` for query string requests, which have none.
+     * @property headers The header fields Davy set: `Content-Type` and [DavyConfiguration.headers].
+     * @property body The JSON body.
      * @property eventIds The IDs of the events in the request, oldest first.
      * @property sentAtMillis When the request was sent.
      * @property durationMillis How long until the response arrived or the request failed.
@@ -127,7 +126,7 @@ public data class DavyDebugSnapshot(
         val method: String,
         val url: String,
         val headers: Map<String, String>,
-        val body: String?,
+        val body: String,
         val eventIds: List<UUID>,
         val sentAtMillis: Long,
         val durationMillis: Long,

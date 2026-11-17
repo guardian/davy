@@ -99,9 +99,6 @@ internal object DavyJson {
 
     private fun JSONObject.stringOrNull(key: String): String? = if (isNull(key)) null else getString(key)
 
-    /** `info` as compact JSON with sorted keys, as sent in the query string format. */
-    fun info(info: Map<String, String>): String = buildString { appendObject(info.toSortedMap()) }
-
     private fun StringBuilder.appendSession(session: Session) {
         appendObject(
             linkedMapOf(

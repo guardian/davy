@@ -17,15 +17,13 @@ import kotlin.math.ceil
  * Processes logged events in order: persists them, then sends them.
  *
  * Every change to its state runs on a single thread, one at a time, like an actor. Requests run on
- * other threads, so new events keep being written to disk while requests are in flight, and their
- * outcomes are handled back on that thread.
+ * another thread, so new events keep being written to disk while a request is in flight, and their
+ * outcomes are handled back on the state thread.
  *
- * Only one drain runs at a time; it sends pending events oldest first, with up to
- * `maxConcurrentRequests` requests in flight, until the store is empty, a request fails, or the
- * server asks for a pause.
+ * Only one drain runs at a time; it sends pending events oldest first, one request at a time, until
+ * the store is empty, a request fails, or the server asks for a pause.
  *
- * - A failure stops new requests and schedules a retry with exponential backoff. The retry starts
- *   with a single request, and only resumes full concurrency once that succeeds.
+ * - A failure stops sending and schedules a retry with exponential backoff.
  * - A `Retry-After` pause stops all requests until it ends, even when flushing, and is persisted so
  *   a relaunch doesn't skip it.
  * - Rejected events are discarded so they don't block the queue.
@@ -38,33 +36,11 @@ internal class EventPipeline(
     private val retryPolicy: RetryPolicy,
 ) {
     /** Pending events to send in one request, all from the same session. */
-    private class Delivery(val stored: List<StoredEvent>, val session: Session, val events: List<EventRecord>) {
-        val fileNames: List<String> get() = stored.map { it.fileName }
-    }
+    private class Delivery(val stored: List<StoredEvent>, val session: Session, val events: List<EventRecord>)
 
     private class Pending(val stored: StoredEvent, val session: Session, val event: EventRecord)
 
     private val batchSize = configuration.batchSize.coerceAtLeast(1)
-    private val eventsPerRequest: Int
-    private val maxConcurrentRequests: Int
-
-    init {
-        when (val format = configuration.format) {
-            RequestFormat.JsonBatch -> {
-                eventsPerRequest = batchSize
-                maxConcurrentRequests = 1
-            }
-            is RequestFormat.JsonEvent -> {
-                eventsPerRequest = 1
-                maxConcurrentRequests = format.maxConcurrentRequests.coerceAtLeast(1)
-            }
-            is RequestFormat.QueryString -> {
-                eventsPerRequest = 1
-                maxConcurrentRequests = format.maxConcurrentRequests.coerceAtLeast(1)
-            }
-        }
-    }
-
     private val requestBuilder = RequestBuilder(configuration)
     private val pauseFile = File(storageDirectory, "paused-until")
 
@@ -74,8 +50,8 @@ internal class EventPipeline(
         removeOnCancelPolicy = true
     }
 
-    /** Sends requests, up to [maxConcurrentRequests] at once. */
-    private val network: ExecutorService = Executors.newFixedThreadPool(maxConcurrentRequests) {
+    /** Sends one request at a time. */
+    private val network: ExecutorService = Executors.newSingleThreadExecutor {
         Thread(it, "Davy network").apply { isDaemon = true }
     }
 
@@ -85,16 +61,7 @@ internal class EventPipeline(
     /** Waits out a backoff or a server-requested pause, then sends again. */
     private var retry: ScheduledFuture<*>? = null
     private var isDraining = false
-    private var drainFailed = false
-    private var running = 0
-    private var concurrency = 1
     private var consecutiveFailures = 0
-
-    /** Whether the next drain starts with a single request, after a failure or pause. */
-    private var isProbing = false
-
-    /** File names of events in requests that haven't finished, so no event is sent twice at once. */
-    private val inFlight = mutableSetOf<String>()
 
     /** When a server-requested pause ends, in milliseconds since 1970. */
     private var pausedUntil: Long? = null
@@ -258,31 +225,26 @@ internal class EventPipeline(
         if (retry != null || isDraining) return
 
         isDraining = true
-        drainFailed = false
         pruneExpiredEvents()
-        concurrency = if (isProbing) 1 else maxConcurrentRequests
-        fill()
+        sendNext()
     }
 
-    /** Starts requests until the concurrency limit is reached, then finishes the drain once none are running. */
-    private fun fill() {
-        while (!drainFailed && pausedUntil == null && running < concurrency) {
-            val delivery = nextDelivery() ?: break
-            inFlight += delivery.fileNames
-            running += 1
-            try {
-                network.execute {
-                    val (outcome, request) = send(delivery)
-                    submit { finish(delivery, outcome, request) }
-                }
-            } catch (_: RejectedExecutionException) {
-                // Closed, so nothing more is sent.
-                running -= 1
-                inFlight -= delivery.fileNames.toSet()
-                break
-            }
+    /** Sends the next pending delivery, or finishes the drain if none remain or sending is paused. */
+    private fun sendNext() {
+        val delivery = if (pausedUntil == null) nextDelivery() else null
+        if (delivery == null) {
+            finishDrain(failed = false)
+            return
         }
-        if (running == 0) finishDrain()
+        try {
+            network.execute {
+                val (outcome, request) = send(delivery)
+                submit { finish(delivery, outcome, request) }
+            }
+        } catch (_: RejectedExecutionException) {
+            // Closed, so nothing more is sent.
+            finishDrain(failed = false)
+        }
     }
 
     /**
@@ -306,7 +268,7 @@ internal class EventPipeline(
             method = request.method,
             url = request.url,
             headers = request.headers.toMap(),
-            body = request.body?.decodeToString(),
+            body = request.body.decodeToString(),
             eventIds = delivery.events.map { it.id },
             sentAtMillis = sentAt,
             durationMillis = durationMillis,
@@ -322,45 +284,39 @@ internal class EventPipeline(
     }
 
     private fun finish(delivery: Delivery, outcome: DeliveryOutcome, request: DavyDebugSnapshot.Request?) {
-        running -= 1
-        inFlight -= delivery.fileNames.toSet()
         request?.let(::recordRequest)
         when (outcome) {
             DeliveryOutcome.Delivered -> {
                 store.remove(delivery.stored)
                 recordSent(delivery, DavyDebugSnapshot.SentEvent.Outcome.Delivered)
                 consecutiveFailures = 0
-                isProbing = false
-                concurrency = maxConcurrentRequests
+                sendNext()
             }
             is DeliveryOutcome.Rejected -> {
                 Log.e(TAG, "Discarding ${delivery.events.size} event(s) rejected with HTTP ${outcome.statusCode}")
                 store.remove(delivery.stored)
                 recordSent(delivery, DavyDebugSnapshot.SentEvent.Outcome.Rejected(outcome.statusCode))
-                isProbing = false
-                concurrency = maxConcurrentRequests
+                sendNext()
             }
             is DeliveryOutcome.Throttled -> {
                 Log.i(TAG, "Server asked to retry after ${outcome.retryAfterSeconds} seconds")
                 pause(outcome.retryAfterSeconds)
                 recordFailure("Server asked to retry after ${ceil(outcome.retryAfterSeconds).toLong()} seconds")
+                finishDrain(failed = false)
             }
             is DeliveryOutcome.Failed -> {
                 Log.e(TAG, "Failed to send ${delivery.events.size} event(s): ${outcome.reason}")
-                drainFailed = true
                 recordFailure(outcome.reason)
+                finishDrain(failed = true)
             }
         }
-        fill()
     }
 
-    private fun finishDrain() {
+    private fun finishDrain(failed: Boolean) {
         isDraining = false
         if (pausedUntil != null) {
-            isProbing = true
             schedulePauseEnd()
-        } else if (drainFailed) {
-            isProbing = true
+        } else if (failed) {
             scheduleRetry()
         }
         completeFlushes()
@@ -373,12 +329,12 @@ internal class EventPipeline(
     }
 
     /**
-     * The oldest pending events not already in flight that can go in one request: up to
-     * `eventsPerRequest` events from the same session.
+     * The oldest pending events that can go in one request: up to `batchSize` events from the
+     * same session.
      */
     private fun nextDelivery(): Delivery? {
         while (true) {
-            val batch = store.oldest(eventsPerRequest, inFlight)
+            val batch = store.oldest(batchSize)
             if (batch.isEmpty()) return null
             val decoded = decode(batch)
             val session = decoded.firstOrNull()?.session ?: continue
@@ -444,7 +400,6 @@ internal class EventPipeline(
         }
         // Capped in case the device clock moved backwards since the pause was stored.
         pausedUntil = minOf(stored, now + retryPolicy.maxRetryAfter.inWholeMilliseconds)
-        isProbing = true
         schedulePauseEnd()
     }
 

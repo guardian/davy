@@ -50,12 +50,11 @@ struct FileEventStore {
         fileNames.append(name)
     }
 
-    /// Reads up to `limit` of the oldest events, skipping any in `excluded`. Unreadable files are
-    /// discarded.
-    mutating func oldest(_ limit: Int, excluding excluded: Set<String> = []) -> [StoredEvent] {
+    /// Reads up to `limit` of the oldest events. Unreadable files are discarded.
+    mutating func oldest(_ limit: Int) -> [StoredEvent] {
         var events: [StoredEvent] = []
         var unreadable: [String] = []
-        for name in fileNames where !excluded.contains(name) {
+        for name in fileNames {
             guard events.count < limit else { break }
             guard let data = try? Data(contentsOf: url(for: name)), !data.isEmpty else {
                 unreadable.append(name)

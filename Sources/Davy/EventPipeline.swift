@@ -35,13 +35,11 @@ struct RetryPolicy: Sendable {
 
 /// Serially processes logged events: persists them, then sends them.
 ///
-/// Sending runs in a child task so new events keep being written to disk while requests are in
-/// flight. Only one drain runs at a time; it sends pending events oldest first, with up to
-/// `maxConcurrentRequests` requests in flight, until the store is empty, a request fails, or the
-/// server asks for a pause.
+/// Sending runs in a child task so new events keep being written to disk while a request is in
+/// flight. Only one drain runs at a time; it sends pending events oldest first, one request at a
+/// time, until the store is empty, a request fails, or the server asks for a pause.
 ///
-/// - A failure stops new requests and schedules a retry with exponential backoff. The retry
-///   starts with a single request, and only resumes full concurrency once that succeeds.
+/// - A failure stops sending and schedules a retry with exponential backoff.
 /// - A `Retry-After` pause stops all requests until it ends, even when flushing, and is persisted
 ///   so a relaunch doesn't skip it.
 /// - Rejected events are discarded so they don't block the queue.
@@ -74,8 +72,6 @@ actor EventPipeline {
     private var session: Session
     private let configuration: DavyConfiguration
     private let batchSize: Int
-    private let eventsPerRequest: Int
-    private let maxConcurrentRequests: Int
     private let requestBuilder: RequestBuilder
     private let transport: any EventTransport
     private let retryPolicy: RetryPolicy
@@ -87,10 +83,6 @@ actor EventPipeline {
     private var retryTask: Task<Void, Never>?
     private var sendTask: Task<Void, Never>?
     private var consecutiveFailures = 0
-    /// Whether the next drain starts with a single request, after a failure or pause.
-    private var isProbing = false
-    /// File names of events in requests that haven't finished, so no event is sent twice at once.
-    private var inFlight: Set<String> = []
     /// When a server-requested pause ends.
     private var pausedUntil: Date?
 
@@ -124,14 +116,6 @@ actor EventPipeline {
         self.session = session
         self.configuration = configuration
         self.batchSize = max(1, configuration.batchSize)
-        switch configuration.format {
-        case .jsonBatch:
-            self.eventsPerRequest = batchSize
-            self.maxConcurrentRequests = 1
-        case let .jsonEvent(maxConcurrentRequests), let .queryString(_, maxConcurrentRequests):
-            self.eventsPerRequest = 1
-            self.maxConcurrentRequests = max(1, maxConcurrentRequests)
-        }
         self.requestBuilder = RequestBuilder(configuration: configuration)
         self.transport = transport
         self.retryPolicy = retryPolicy
@@ -219,7 +203,6 @@ actor EventPipeline {
     /// `"davy_event_too_large"` error in its place, or `nil` if even that doesn't fit.
     private func recordWithinMaxEventSize(_ record: EventRecord) -> EventRecord? {
         let maxSize = configuration.maxEventSize
-        // Only an unusable endpoint makes measuring fail, which isn't the event's fault, so keep it.
         guard let size = try? requestBuilder.size(of: record, in: session), size > maxSize else {
             return record
         }
@@ -279,68 +262,44 @@ actor EventPipeline {
         pruneExpiredEvents()
 
         var failed = false
-        var concurrency = isProbing ? 1 : maxConcurrentRequests
-        repeat {
-            await withTaskGroup(of: (Delivery, DeliveryOutcome, DavyDebugSnapshot.Request?).self) { group in
-                var running = 0
-                while true {
-                    while !failed, pausedUntil == nil, running < concurrency, let delivery = nextDelivery() {
-                        inFlight.formUnion(delivery.stored.map(\.fileName))
-                        running += 1
-                        group.addTask { [transport, requestBuilder] in
-                            let (outcome, request) = await Self.send(delivery, via: transport, requestBuilder: requestBuilder)
-                            return (delivery, outcome, request)
-                        }
-                    }
-                    guard let (delivery, outcome, request) = await group.next() else { break }
-                    running -= 1
-                    inFlight.subtract(delivery.stored.map(\.fileName))
-                    if let request {
-                        recordRequest(request)
-                    }
-
-                    switch outcome {
-                    case .delivered:
-                        store.remove(delivery.stored)
-                        recordSent(delivery, outcome: .delivered)
-                        consecutiveFailures = 0
-                        isProbing = false
-                        concurrency = maxConcurrentRequests
-                    case let .rejected(statusCode):
-                        logger.error("Discarding \(delivery.events.count) event(s) rejected with HTTP \(statusCode)")
-                        store.remove(delivery.stored)
-                        recordSent(delivery, outcome: .rejected(statusCode: statusCode))
-                        isProbing = false
-                        concurrency = maxConcurrentRequests
-                    case let .throttled(retryAfter):
-                        logger.info("Server asked to retry after \(retryAfter) seconds")
-                        pause(forRetryAfter: retryAfter)
-                        recordFailure("Server asked to retry after \(Int(retryAfter.rounded(.up))) seconds")
-                    case let .failed(reason):
-                        logger.error("Failed to send \(delivery.events.count) event(s): \(reason)")
-                        failed = true
-                        recordFailure(reason)
-                    }
-                }
+        while !failed, pausedUntil == nil, let delivery = nextDelivery() {
+            let (outcome, request) = await Self.send(delivery, via: transport, requestBuilder: requestBuilder)
+            if let request {
+                recordRequest(request)
             }
-            // Events logged while the last request finished would otherwise wait for the next
-            // trigger, so check again before finishing. Nothing suspends between here and the end.
-        } while !failed && pausedUntil == nil && store.count > 0
+
+            switch outcome {
+            case .delivered:
+                store.remove(delivery.stored)
+                recordSent(delivery, outcome: .delivered)
+                consecutiveFailures = 0
+            case let .rejected(statusCode):
+                logger.error("Discarding \(delivery.events.count) event(s) rejected with HTTP \(statusCode)")
+                store.remove(delivery.stored)
+                recordSent(delivery, outcome: .rejected(statusCode: statusCode))
+            case let .throttled(retryAfter):
+                logger.info("Server asked to retry after \(retryAfter) seconds")
+                pause(forRetryAfter: retryAfter)
+                recordFailure("Server asked to retry after \(Int(retryAfter.rounded(.up))) seconds")
+            case let .failed(reason):
+                logger.error("Failed to send \(delivery.events.count) event(s): \(reason)")
+                failed = true
+                recordFailure(reason)
+            }
+        }
 
         if pausedUntil != nil {
-            isProbing = true
             schedulePauseEnd()
         } else if failed {
-            isProbing = true
             scheduleRetry()
         }
     }
 
-    /// The oldest pending events not already in flight that can go in one request: up to
-    /// `eventsPerRequest` events from the same session.
+    /// The oldest pending events that can go in one request: up to `batchSize` events from the
+    /// same session.
     private func nextDelivery() -> Delivery? {
         while true {
-            let batch = store.oldest(eventsPerRequest, excluding: inFlight)
+            let batch = store.oldest(batchSize)
             guard !batch.isEmpty else { return nil }
             let decoded = decode(batch)
             guard let session = decoded.first?.pending.session else { continue }
@@ -372,10 +331,10 @@ actor EventPipeline {
         let (outcome, statusCode) = await transport.deliver(request)
         let sent = DavyDebugSnapshot.Request(
             id: UUID(),
-            method: request.httpMethod ?? "GET",
+            method: request.httpMethod ?? "POST",
             url: request.url ?? requestBuilder.endpoint,
             headers: request.allHTTPHeaderFields ?? [:],
-            body: request.httpBody.map { String(decoding: $0, as: UTF8.self) },
+            body: request.httpBody.map { String(decoding: $0, as: UTF8.self) } ?? "",
             eventIDs: delivery.events.map(\.id),
             sentAt: sentAt,
             duration: (clock.now - start).timeInterval,
@@ -438,7 +397,6 @@ actor EventPipeline {
         }
         // Capped in case the device clock moved backwards since the pause was stored.
         pausedUntil = min(stored, .now.addingTimeInterval(retryPolicy.maxRetryAfter.timeInterval))
-        isProbing = true
         schedulePauseEnd()
     }
 

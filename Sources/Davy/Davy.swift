@@ -12,9 +12,9 @@ import os
 /// ```
 ///
 /// `log(_:)` and `flush()` are synchronous and can be called from any thread. Events are processed
-/// in the order they are logged. By default each request body is a JSON object containing events
-/// from a single session, along with common app and device data captured when that session
-/// started:
+/// in the order they are logged. Each request body is a JSON object containing up to
+/// ``DavyConfiguration/batchSize`` events from a single session, along with common app and device
+/// data captured when that session started:
 ///
 /// ```json
 /// {
@@ -22,11 +22,6 @@ import os
 ///   "events": [ { "id": "…", "type": "breadcrumb", "name": "checkout_started", "timestamp": "…" } ]
 /// }
 /// ```
-///
-/// With ``DavyConfiguration/RequestFormat/jsonEvent(maxConcurrentRequests:)``, each event is
-/// sent as its own request with this body, containing only that event. With
-/// ``DavyConfiguration/RequestFormat/queryString(method:maxConcurrentRequests:)``, each
-/// event is sent as its own request with the same fields in the URL instead.
 ///
 /// Events are sent when ``DavyConfiguration/batchSize`` events are pending, when
 /// ``DavyConfiguration/debounceInterval`` passes without a new event, when the app moves
@@ -36,8 +31,7 @@ import os
 /// response with a `Retry-After` header pauses all sending for that long. Events older than
 /// ``DavyConfiguration/maxEventAge`` are discarded.
 public final class Davy: Sendable {
-    /// A random identifier sent with this instance's events, as the request's `session.id` (or
-    /// `sessionId` query parameter).
+    /// A random identifier sent with this instance's events, as the request's `session.id`.
     ///
     /// Generated each time an instance is created (typically once per app launch) and never
     /// reused, so it links events within a session without identifying the user or device across
@@ -179,8 +173,8 @@ public final class Davy: Sendable {
     ///
     /// Returns immediately; the update and breadcrumb are processed in order with ``log(_:)``, so
     /// the `"session_updated"` breadcrumb and every event logged after this call carry the updated
-    /// `session.info` (and in JSON batches, each change starts a new batch). As with event `info`,
-    /// don't include personal data or values that identify a person or device across sessions.
+    /// `session.info` (and each change starts a new batch). As with event `info`, don't include
+    /// personal data or values that identify a person or device across sessions.
     public func addSessionInfo(_ info: [String: String]) {
         let timestamp = Date.now
         let record = EventRecord(.breadcrumb(Event.sessionUpdatedName, info: info), timestamp: timestamp)

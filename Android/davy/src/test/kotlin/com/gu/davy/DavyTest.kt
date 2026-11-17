@@ -350,73 +350,16 @@ class DavyTest {
     }
 
     @Test
-    fun queryStringSendsEachEventAsItsOwnRequestWithFieldsInTheURL() {
-        for (method in HttpMethod.entries) {
-            val transport = MockTransport()
-            val session = testSession("beta", mapOf("edition" to "uk"))
-            val telemetry = makeDavy(
-                directory(),
-                transport,
-                endpoint = "https://example.com/events?key=abc",
-                format = RequestFormat.QueryString(method),
-                environment = "beta",
-                info = mapOf("edition" to "uk"),
-                headers = mapOf("Authorization" to "Bearer token"),
-                session = session,
-            ).tracked()
-
-            telemetry.log(Event.Breadcrumb("checkout_started"))
-            telemetry.log(Event.Error("payment_declined", mapOf("reason" to "a&b=c+d /é")))
-            telemetry.flushAndWaitBlocking()
-
-            // Requests are sent concurrently, so they may arrive in either order.
-            val requests = transport.requests.sortedBy { URI(it.url).path }
-            assertEquals(listOf("/events/checkout_started", "/events/payment_declined"), requests.map { URI(it.url).path })
-            val eventIds = mutableSetOf<String>()
-            for (request in requests) {
-                assertEquals(method.name, request.method)
-                assertNull(request.body)
-                assertEquals("Bearer token", request.headers["Authorization"])
-                assertFalse('+' in URI(request.url).rawQuery)
-
-                val query = queryParameters(request)
-                eventIds += query.getValue("eventId")
-                assertEquals("abc", query["key"])
-                assertEquals(DavyJson.uuid(telemetry.sessionId), query["sessionId"])
-                assertEquals("beta", query["environment"])
-                assertEquals(session.appVersion, query["appVersion"])
-                assertEquals(session.build, query["build"])
-                assertEquals(session.os, query["os"])
-                assertEquals(session.osVersion, query["osVersion"])
-                assertEquals(session.deviceModel, query["deviceModel"])
-                assertEquals(session.locale, query["locale"])
-                assertEquals(mapOf("edition" to "uk"), JSONObject(query.getValue("sessionInfo")).strings())
-                assertTrue(abs(DavyJson.parseTimestamp(query.getValue("timestamp")) - System.currentTimeMillis()) < 60_000)
-            }
-            assertEquals(2, eventIds.size)
-
-            val breadcrumb = queryParameters(requests[0])
-            assertEquals("breadcrumb", breadcrumb["type"])
-            assertNull(breadcrumb["info"])
-            val error = queryParameters(requests[1])
-            assertEquals("error", error["type"])
-            val info = JSONObject(error.getValue("info")).strings()
-            assertEquals("a&b=c+d /é", info["reason"])
-            assertEquals(testDiagnostics[Diagnostics.LOW_POWER_MODE], info[Diagnostics.LOW_POWER_MODE])
-        }
-    }
-
-    @Test
     fun retriedEventsKeepTheirId() {
         val transport = MockTransport().apply { setFailing(true) }
-        val telemetry = makeDavy(directory(), transport, format = RequestFormat.QueryString()).tracked()
+        val telemetry = makeDavy(directory(), transport).tracked()
 
         telemetry.log(Event.Breadcrumb("event_0"))
         telemetry.flushAndWaitBlocking()
         transport.setFailing(false)
         telemetry.flushAndWaitBlocking()
 
-        val eventIds = transport.requests.map { queryParameters(it)["eventId"] }
+        val eventIds = transport.requests.map { JSONObject(it.body.decodeToString()).getJSONArray("events").getJSONObject(0).getString("id") }
         assertEquals(2, eventIds.size)
         assertEquals(eventIds[0], eventIds[1])
     }
@@ -488,39 +431,14 @@ class DavyTest {
     }
 
     @Test
-    fun queryStringSendsConcurrentlyAndProbesWithOneRequestAfterAFailure() {
-        val transport = MockTransport().apply {
-            delayMillis = 50
-            setFailing(true)
-        }
-        val telemetry = makeDavy(directory(), transport, format = RequestFormat.QueryString(maxConcurrentRequests = 3)).tracked()
-
-        repeat(6) { telemetry.log(Event.Breadcrumb("event_$it")) }
-        telemetry.flushAndWaitBlocking()
-        // No new requests start once one fails.
-        assertEquals(listOf(1, 2, 3), transport.concurrencyAtStart)
-
-        transport.setFailing(false)
-        telemetry.flushAndWaitBlocking()
-
-        // The retry starts with a single request and resumes full concurrency once it succeeds.
-        val retryConcurrency = transport.concurrencyAtStart.drop(3)
-        assertEquals(listOf(1, 1), retryConcurrency.take(2))
-        assertEquals(3, retryConcurrency.max())
-        val deliveredNames = transport.delivered.map { URI(it.url).path.substringAfterLast('/') }
-        assertEquals((0 until 6).map { "event_$it" }.toSet(), deliveredNames.toSet())
-        assertEquals(6, deliveredNames.size)
-    }
-
-    @Test
-    fun jsonEventSendsEachEventAsItsOwnJsonRequestConcurrently() {
-        val transport = MockTransport().apply { delayMillis = 50 }
+    fun batchSizeOfOneSendsEachEventAsItsOwnRequest() {
+        val transport = MockTransport()
         val session = testSession("beta")
         val telemetry = makeDavy(
             directory(),
             transport,
             endpoint = "https://example.com/events?key=abc",
-            format = RequestFormat.JsonEvent(maxConcurrentRequests = 3),
+            batchSize = 1,
             environment = "beta",
             headers = mapOf("Authorization" to "Bearer token"),
             session = session,
@@ -536,19 +454,11 @@ class DavyTest {
             assertEquals("https://example.com/events?key=abc", request.url)
             assertEquals("application/json", request.headers["Content-Type"])
             assertEquals("Bearer token", request.headers["Authorization"])
-            val payload = JSONObject(request.body!!.decodeToString())
+            val payload = JSONObject(request.body.decodeToString())
             assertEquals(1, payload.getJSONArray("events").length())
             assertEquals(session, DavyJson.parseSession(payload.getJSONObject("session")))
         }
-        // Requests are sent concurrently, so they may arrive in any order.
-        assertEquals((0 until 6).map { "event_$it" }.toSet(), transport.sentNames.toSet())
-        assertEquals(6, transport.sentNames.size)
-        assertEquals(listOf(1, 2, 3), transport.concurrencyAtStart.take(3))
-        assertEquals(3, transport.concurrencyAtStart.max())
-
-        val builder = RequestBuilder(URI("https://example.com/events"), emptyMap(), RequestFormat.JsonEvent())
-        val events = listOf(Event.Breadcrumb("event_0"), Event.Breadcrumb("event_1")).map { EventRecord.from(it, System.currentTimeMillis()) }
-        assertThrows(IllegalArgumentException::class.java) { builder.request(session, events, System.currentTimeMillis()) }
+        assertEquals((0 until 6).map { "event_$it" }, transport.sentNames)
     }
 
     @Test

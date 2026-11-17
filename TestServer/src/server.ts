@@ -119,7 +119,6 @@ async function handle(
     { ...inspected, receivedAt, method, target, headers, body: body.toString("utf8") },
     tooLarge ? 413 : undefined,
   );
-  // `Cache-Control` is required for GET, and harmless for POST.
   const responseHeaders: Record<string, string> = { "Cache-Control": "no-store" };
   if (configured.retryAfter) responseHeaders["Retry-After"] = configured.retryAfter;
   if (configured.status !== 204) responseHeaders["Content-Length"] = "0";

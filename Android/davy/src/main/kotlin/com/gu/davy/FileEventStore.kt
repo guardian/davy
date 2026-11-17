@@ -55,13 +55,12 @@ internal class FileEventStore(private val directory: File) {
         fileNames += name
     }
 
-    /** Reads up to [limit] of the oldest events, skipping any in [excluded]. Unreadable files are discarded. */
-    fun oldest(limit: Int, excluded: Set<String> = emptySet()): List<StoredEvent> {
+    /** Reads up to [limit] of the oldest events. Unreadable files are discarded. */
+    fun oldest(limit: Int): List<StoredEvent> {
         val events = mutableListOf<StoredEvent>()
         val unreadable = mutableListOf<String>()
         for (name in fileNames) {
             if (events.size >= limit) break
-            if (name in excluded) continue
             val data = try {
                 File(directory, name).readBytes()
             } catch (_: IOException) {

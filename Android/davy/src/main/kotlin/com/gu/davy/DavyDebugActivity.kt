@@ -513,20 +513,10 @@ public class DavyDebugActivity : Activity() {
             }
         }
 
-        val query = request.queryParameters
-        if (query.isNotEmpty()) {
-            content.addView(sectionHeader("Query"))
-            query.forEach { (name, value) -> content.addView(field(name, monospace(value))) }
-        }
-
         content.addView(sectionHeader("Body"))
         val body = request.prettyBody
-        if (body == null) {
-            content.addView(caption("None. Query string requests have no body."))
-        } else {
-            content.addView(text(body, size = 12f, monospace = true, selectable = true))
-            content.addView(shareButton("Share Body", body))
-        }
+        content.addView(text(body, size = 12f, monospace = true, selectable = true))
+        content.addView(shareButton("Share Body", body))
     }
 
     /** A list of rows built with [listRow], each showing an item with [bind]. */

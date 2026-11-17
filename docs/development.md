@@ -19,7 +19,7 @@ Neither library has runtime dependencies. Only their tests use other libraries: 
 
 Both clients' tests check what they send against `Spec/`:
 
-- **The spec.** Every kind of event is sent through each client in every request format, and each request is checked against the spec's schemas and its written rules for query strings: parameter order and percent-encoding. The tests also check that each status code is handled as the spec describes.
+- **The spec.** Every kind of event is sent through each client, and each request is checked against the spec's schemas. The tests also check that each status code is handled as the spec describes.
 - **The fixtures.** Each client must build the requests in `fixtures.json` exactly, byte for byte, which catches differences the spec allows, such as encoding and key order.
 
 So a change to what Davy sends means changing the spec, the fixtures, and both clients together. Changes to how Davy behaves, such as delivery and retries, should also be made in both clients; each client's behavior tests mirror the other's.
@@ -75,7 +75,7 @@ The tests check that the server accepts every request in `fixtures.json` without
 
 ## Trying the clients against a server
 
-`TestServer/` is a small server you can point an app at while developing. It accepts every request format, checks each request against `Spec/openapi.yaml`, and lists the events it received on a web page. It keeps everything in memory and has no authentication, so use it only for development.
+`TestServer/` is a small server you can point an app at while developing. It checks each request against `Spec/openapi.yaml`, and lists the events it received on a web page. It keeps everything in memory and has no authentication, so use it only for development.
 
 Start it with Node.js 24 or later:
 
@@ -119,7 +119,7 @@ The server uses plain HTTP, which platforms restrict:
 
 The page shows each event as it arrives, newest first, with:
 
-- **Problems.** Every way its request breaks the spec, including the query string rules the spec can only describe in words: parameter order, percent-encoding, and `info` as compact JSON with sorted keys. Select an event to see the problems and the raw request.
+- **Problems.** Every way its request breaks the spec. Select an event to see the problems and the raw request.
 - **Duplicates.** Events with an ID the server has already stored, which happens when a client retries after a response was lost.
 - **The response.** Use **Respond with** to change how the server responds to every request, to see how the clients handle rejection (400), throttling and pausing (429 and 503 with `Retry-After`), and failures (500).
 

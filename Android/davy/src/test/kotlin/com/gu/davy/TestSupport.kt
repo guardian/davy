@@ -19,8 +19,6 @@ internal class MockTransport : EventTransport {
     private val lock = Any()
     private val requestList = mutableListOf<HttpRequest>()
     private val deliveredList = mutableListOf<HttpRequest>()
-    private val concurrencyList = mutableListOf<Int>()
-    private var running = 0
     private var statusCode = 200
     private var headers = emptyMap<String, String>()
 
@@ -33,13 +31,10 @@ internal class MockTransport : EventTransport {
     /** Requests answered with a 2xx status. */
     val delivered: List<HttpRequest> get() = synchronized(lock) { deliveredList.toList() }
 
-    /** How many requests were in flight as each one started, including itself. */
-    val concurrencyAtStart: List<Int> get() = synchronized(lock) { concurrencyList.toList() }
-
     val attempts: Int get() = requests.size
 
     /** JSON bodies of requests answered with a 2xx status. */
-    val payloads: List<JSONObject> get() = delivered.mapNotNull { request -> request.body?.let { JSONObject(it.decodeToString()) } }
+    val payloads: List<JSONObject> get() = delivered.map { JSONObject(it.body.decodeToString()) }
 
     val sentEvents: List<JSONObject> get() = payloads.flatMap { it.getJSONArray("events").objects() }
     val sentNames: List<String> get() = sentEvents.map { it.getString("name") }
@@ -56,17 +51,11 @@ internal class MockTransport : EventTransport {
     override fun send(request: HttpRequest): HttpResponse {
         val (statusCode, headers) = synchronized(lock) {
             requestList += request
-            running += 1
-            concurrencyList += running
             statusCode to headers
         }
-        try {
-            if (delayMillis > 0) Thread.sleep(delayMillis)
-            if (statusCode in 200..299) synchronized(lock) { deliveredList += request }
-            return HttpResponse(statusCode, headers)
-        } finally {
-            synchronized(lock) { running -= 1 }
-        }
+        if (delayMillis > 0) Thread.sleep(delayMillis)
+        if (statusCode in 200..299) synchronized(lock) { deliveredList += request }
+        return HttpResponse(statusCode, headers)
     }
 }
 
@@ -111,11 +100,10 @@ internal fun makeDavy(
     directory: File,
     transport: EventTransport,
     endpoint: String = "https://example.com/events",
-    format: RequestFormat = RequestFormat.JsonBatch,
     environment: String? = null,
     info: Map<String, String> = emptyMap(),
     onInvalidEventName: InvalidEventNameAction = InvalidEventNameAction.SEND,
-    maxEventSize: Int = 2048,
+    maxEventSize: Int = 4096,
     logsAppLifecycleEvents: Boolean = false,
     headers: Map<String, String> = emptyMap(),
     batchSize: Int = 100,
@@ -126,7 +114,6 @@ internal fun makeDavy(
 ): Davy = Davy(
     configuration = DavyConfiguration(
         endpoint = java.net.URI(endpoint),
-        format = format,
         environment = environment,
         info = info,
         onInvalidEventName = onInvalidEventName,
@@ -177,13 +164,6 @@ internal fun waitUntil(timeoutMillis: Long = 5_000, condition: () -> Boolean): B
     }
     return condition()
 }
-
-/** The query parameters of [request]'s URL, percent-decoded. */
-internal fun queryParameters(request: HttpRequest): Map<String, String> =
-    request.url.substringAfter('?', "").split('&').filter { it.isNotEmpty() }.associate { item ->
-        val (name, value) = item.split('=', limit = 2)
-        name to OpenApiSpec.percentDecoded(value)!!
-    }
 
 internal fun JSONArray.objects(): List<JSONObject> = (0 until length()).map(::getJSONObject)
 

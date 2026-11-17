@@ -18,8 +18,6 @@ private struct CheckoutError: Error {}
 /// The example endpoint used by the spec's server and paths.
 private let endpoint = URL(string: "https://api.example.com/events")!
 
-private let formats: [DavyConfiguration.RequestFormat] = [.jsonBatch, .jsonEvent()]
-
 /// Records each way `request` breaks the spec as an issue.
 private func expectConforms(_ request: URLRequest, to spec: OpenAPISpec, sourceLocation: SourceLocation = #_sourceLocation) {
     for violation in spec.violations(of: request) {
@@ -42,10 +40,6 @@ private func changingBody(of request: URLRequest, _ change: (inout [String: Any]
 struct SpecConformanceTests {
     /// A case in `Spec/fixtures.json`.
     private struct Fixture: Decodable {
-        struct Format: Decodable {
-            let type: String
-        }
-
         struct Expected: Decodable {
             let method: String
             let url: String
@@ -54,7 +48,6 @@ struct SpecConformanceTests {
 
         let name: String
         let endpoint: URL
-        let format: Format
         let headers: [String: String]
         let sentAt: Date
         let session: Session
@@ -74,17 +67,7 @@ struct SpecConformanceTests {
         #expect(!fixtures.isEmpty)
 
         for (fixture, rawCase) in zip(fixtures, rawCases) {
-            let format: DavyConfiguration.RequestFormat
-            switch fixture.format.type {
-            case "jsonBatch":
-                format = .jsonBatch
-            case "jsonEvent":
-                format = .jsonEvent()
-            default:
-                Issue.record("Unknown format \(fixture.format.type) in \(fixture.name)")
-                continue
-            }
-            let builder = RequestBuilder(configuration: .init(endpoint: fixture.endpoint, format: format, headers: fixture.headers))
+            let builder = RequestBuilder(configuration: .init(endpoint: fixture.endpoint, headers: fixture.headers))
             let request = try builder.request(session: fixture.session, events: fixture.events, sentAt: fixture.sentAt)
 
             let comment = Comment(rawValue: fixture.name)
@@ -98,8 +81,7 @@ struct SpecConformanceTests {
         }
     }
 
-    @Test(arguments: formats)
-    func everyKindOfEventIsSentAsTheSpecDescribes(format: DavyConfiguration.RequestFormat) async throws {
+    @Test func everyKindOfEventIsSentAsTheSpecDescribes() async throws {
         let spec = try OpenAPISpec.load()
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "DavyTests-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -108,7 +90,6 @@ struct SpecConformanceTests {
         let telemetry = Davy(
             configuration: DavyConfiguration(
                 endpoint: endpoint,
-                format: format,
                 environment: "beta",
                 info: ["edition": "uk"],
                 storageDirectory: directory
@@ -125,7 +106,7 @@ struct SpecConformanceTests {
         telemetry.log(CheckoutError(), name: "checkout_failed")
         telemetry.measure("feed_load") {}
         // Replaced with a "davy_event_too_large" error.
-        telemetry.log(.breadcrumb("large_event", info: ["blob": String(repeating: "x", count: 3000)]))
+        telemetry.log(.breadcrumb("large_event", info: ["blob": String(repeating: "x", count: 5000)]))
         await telemetry.flushAndWait()
 
         let requests = await transport.requests
@@ -140,10 +121,9 @@ struct SpecConformanceTests {
         }
     }
 
-    @Test(arguments: formats)
-    func sessionsWithAndWithoutOptionalFieldsAreSentAsTheSpecDescribes(format: DavyConfiguration.RequestFormat) throws {
+    @Test func sessionsWithAndWithoutOptionalFieldsAreSentAsTheSpecDescribes() throws {
         let spec = try OpenAPISpec.load()
-        let builder = RequestBuilder(configuration: DavyConfiguration(endpoint: endpoint, format: format))
+        let builder = RequestBuilder(configuration: DavyConfiguration(endpoint: endpoint))
         let sessions = [
             Session(
                 id: UUID(), environment: "production", appVersion: "1.2.0", build: "45",
@@ -163,17 +143,17 @@ struct SpecConformanceTests {
         }
     }
 
-    @Test(arguments: formats, [
+    @Test(arguments: [
         "2023-11-14T22:13:25.000Z",
         "2023-11-14T22:13:25.007Z",
     ])
     func `Send times use the event timestamp format without replacing event times`(
-        format: DavyConfiguration.RequestFormat, sentAt: String
+        sentAt: String
     ) throws {
         let timestamp = "2023-11-14T22:13:20.000Z"
         let event = EventRecord(.breadcrumb("checkout_started"), timestamp: try Date(timestamp, strategy: DavyJSON.timestampStyle))
         let session = Session.start(environment: nil)
-        let builder = RequestBuilder(configuration: .init(endpoint: endpoint, format: format))
+        let builder = RequestBuilder(configuration: .init(endpoint: endpoint))
         let request = try builder.request(
             session: session, events: [event], sentAt: Date(sentAt, strategy: DavyJSON.timestampStyle)
         )

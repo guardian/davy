@@ -38,9 +38,6 @@ private actor MockTransport: EventTransport {
     private(set) var delivered: [URLRequest] = []
     /// Decoded JSON bodies of requests answered with a 2xx status.
     private(set) var payloads: [ReceivedPayload] = []
-    /// How many requests were in flight as each one started, including itself.
-    private(set) var concurrencyAtStart: [Int] = []
-    private var running = 0
     private var statusCode = 200
     private var headers: [String: String] = [:]
     private var delay: Duration = .zero
@@ -70,9 +67,6 @@ private actor MockTransport: EventTransport {
 
     func send(_ request: URLRequest) async throws -> HTTPURLResponse {
         requests.append(request)
-        running += 1
-        concurrencyAtStart.append(running)
-        defer { running -= 1 }
         let (statusCode, headers) = (statusCode, headers)
         if delay > .zero {
             try await Task.sleep(for: delay)
@@ -101,11 +95,10 @@ private func makeDavy(
     directory: URL,
     transport: MockTransport,
     endpoint: String = "https://example.com/events",
-    format: DavyConfiguration.RequestFormat = .jsonBatch,
     environment: String? = nil,
     info: [String: String] = [:],
     onInvalidEventName: DavyConfiguration.InvalidEventNameAction = .send,
-    maxEventSize: Int = 2048,
+    maxEventSize: Int = 4096,
     logsAppLifecycleEvents: Bool = false,
     headers: [String: String] = [:],
     batchSize: Int = 100,
@@ -116,7 +109,6 @@ private func makeDavy(
     Davy(
         configuration: DavyConfiguration(
             endpoint: URL(string: endpoint)!,
-            format: format,
             environment: environment,
             info: info,
             onInvalidEventName: onInvalidEventName,
@@ -132,13 +124,6 @@ private func makeDavy(
         retryPolicy: RetryPolicy(initialDelay: .seconds(60), maxDelay: .seconds(60)),
         notificationCenter: notificationCenter
     )
-}
-
-/// The query parameters of `request`'s URL, percent-decoded.
-private func queryParameters(of request: URLRequest) throws -> [String: String] {
-    let url = try #require(request.url)
-    let items = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
-    return Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
 }
 
 /// Polls `condition` until it holds or `timeout` elapses.
@@ -486,77 +471,22 @@ struct DavyTests {
         #expect(replacedError["low_power_mode"] == String(ProcessInfo.processInfo.isLowPowerModeEnabled))
     }
 
-    @Test(arguments: [DavyConfiguration.HTTPMethod.post, .get])
-    func queryStringSendsEachEventAsItsOwnRequestWithFieldsInTheURL(method: DavyConfiguration.HTTPMethod) async throws {
-        let directory = makeTemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let transport = MockTransport()
-        let telemetry = makeDavy(
-            directory: directory,
-            transport: transport,
-            endpoint: "https://example.com/events?key=abc",
-            format: .queryString(method: method),
-            environment: "beta",
-            info: ["edition": "uk"],
-            headers: ["Authorization": "Bearer token"]
-        )
-
-        telemetry.log(.breadcrumb("checkout_started"))
-        telemetry.log(.error("payment_declined", info: ["reason": "a&b=c+d /é"]))
-        await telemetry.flushAndWait()
-
-        // Requests are sent concurrently, so they may arrive in either order.
-        let requests = await transport.requests.sorted { $0.url?.path() ?? "" < $1.url?.path() ?? "" }
-        #expect(requests.map { $0.url?.path() } == ["/events/checkout_started", "/events/payment_declined"])
-        let expected = Session.start(environment: "beta")
-        var eventIDs: Set<String> = []
-        for request in requests {
-            #expect(request.httpMethod == method.rawValue)
-            #expect(request.httpBody == nil)
-            #expect(request.cachePolicy == .reloadIgnoringLocalCacheData)
-            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer token")
-            #expect(request.url?.query(percentEncoded: true)?.contains("+") == false)
-
-            let query = try queryParameters(of: request)
-            eventIDs.insert(try #require(query["eventId"].flatMap(UUID.init(uuidString:))).uuidString)
-            #expect(query["key"] == "abc")
-            #expect(query["sessionId"] == telemetry.sessionID.uuidString)
-            #expect(query["environment"] == "beta")
-            #expect(query["appVersion"] == expected.appVersion)
-            #expect(query["build"] == expected.build)
-            #expect(query["os"] == expected.os)
-            #expect(query["osVersion"] == expected.osVersion)
-            #expect(query["deviceModel"] == expected.deviceModel)
-            #expect(query["locale"] == expected.locale)
-            #expect(query["sessionInfo"] == #"{"edition":"uk"}"#)
-            let timestamp = try Date(try #require(query["timestamp"]), strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true))
-            #expect(abs(timestamp.timeIntervalSinceNow) < 60)
-        }
-        #expect(eventIDs.count == 2)
-
-        let breadcrumb = try queryParameters(of: requests[0])
-        #expect(breadcrumb["type"] == "breadcrumb")
-        #expect(breadcrumb["info"] == nil)
-        let error = try queryParameters(of: requests[1])
-        #expect(error["type"] == "error")
-        let info = try JSONDecoder().decode([String: String].self, from: Data(try #require(error["info"]).utf8))
-        #expect(info["reason"] == "a&b=c+d /é")
-        #expect(info["low_power_mode"] == String(ProcessInfo.processInfo.isLowPowerModeEnabled))
-    }
-
     @Test func retriedEventsKeepTheirID() async throws {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
         await transport.setFailing(true)
-        let telemetry = makeDavy(directory: directory, transport: transport, format: .queryString())
+        let telemetry = makeDavy(directory: directory, transport: transport)
 
         telemetry.log(.breadcrumb("event_0"))
         await telemetry.flushAndWait()
         await transport.setFailing(false)
         await telemetry.flushAndWait()
 
-        let eventIDs = try await transport.requests.map { try queryParameters(of: $0)["eventId"] }
+        let eventIDs = try await transport.requests.map { request in
+            let body = try #require(request.httpBody)
+            return try JSONDecoder().decode(ReceivedPayload.self, from: body).events.first?.id
+        }
         #expect(eventIDs.count == 2)
         #expect(eventIDs[0] != nil)
         #expect(eventIDs[0] == eventIDs[1])
@@ -654,53 +584,6 @@ struct DavyTests {
         #expect(try retryAfter([:]) == nil)
     }
 
-    @Test func queryStringSendsConcurrentlyAndProbesWithOneRequestAfterAFailure() async throws {
-        let directory = makeTemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let transport = MockTransport()
-        await transport.setDelay(.milliseconds(50))
-        await transport.setFailing(true)
-        let telemetry = makeDavy(directory: directory, transport: transport, format: .queryString(maxConcurrentRequests: 3))
-
-        for index in 0..<6 {
-            telemetry.log(.breadcrumb("event_\(index)"))
-        }
-        await telemetry.flushAndWait()
-        // No new requests start once one fails.
-        #expect(await transport.concurrencyAtStart == [1, 2, 3])
-
-        await transport.setFailing(false)
-        await telemetry.flushAndWait()
-
-        // The retry starts with a single request and resumes full concurrency once it succeeds.
-        let retryConcurrency = await transport.concurrencyAtStart.dropFirst(3)
-        #expect(Array(retryConcurrency.prefix(2)) == [1, 1])
-        #expect(retryConcurrency.max() == 3)
-        let deliveredNames = await transport.delivered.compactMap { $0.url?.lastPathComponent }
-        #expect(Set(deliveredNames) == Set((0..<6).map { "event_\($0)" }))
-        #expect(deliveredNames.count == 6)
-    }
-
-    @Test func jsonEventSendsEachEventAsABatchOfOneConcurrently() async throws {
-        let directory = makeTemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let transport = MockTransport()
-        await transport.setDelay(.milliseconds(50))
-        let telemetry = makeDavy(directory: directory, transport: transport, format: .jsonEvent(maxConcurrentRequests: 3))
-
-        for index in 0..<6 {
-            telemetry.log(.breadcrumb("event_\(index)"))
-        }
-        await telemetry.flushAndWait()
-
-        let requests = await transport.requests
-        #expect(requests.count == 6)
-        #expect(requests.allSatisfy { $0.httpMethod == "POST" && $0.url?.absoluteString == "https://example.com/events" })
-        #expect(await transport.payloads.map(\.events.count) == Array(repeating: 1, count: 6))
-        #expect(Set(await transport.sentNames) == Set((0..<6).map { "event_\($0)" }))
-        #expect(await transport.concurrencyAtStart.max() == 3)
-    }
-
     @Test func debugSnapshotRecordsEachRequestWithItsResponse() async throws {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -725,7 +608,7 @@ struct DavyTests {
             #expect(request.url.absoluteString == "https://example.com/events")
             #expect(request.headers == ["Content-Type": "application/json", "Authorization": "Bearer token"])
             #expect(request.eventIDs == pending.map(\.id))
-            #expect(request.body?.contains(#""name":"checkout_finished""#) == true)
+            #expect(request.body.contains(#""name":"checkout_finished""#))
             #expect((start...Date.now).contains(request.sentAt))
             #expect(request.duration >= 0)
         }
@@ -759,7 +642,7 @@ struct DavyTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
         await transport.setOffline(true)
-        let telemetry = makeDavy(directory: directory, transport: transport, format: .queryString(method: .get))
+        let telemetry = makeDavy(directory: directory, transport: transport)
 
         telemetry.log(.breadcrumb("checkout_started"))
         await telemetry.flushAndWait()
@@ -769,9 +652,9 @@ struct DavyTests {
         let reason = try #require(snapshot.lastFailure?.reason)
         #expect(request.statusCode == nil)
         #expect(request.outcome == .failed(reason: reason))
-        #expect(request.method == "GET")
-        #expect(request.url.path() == "/events/checkout_started")
-        #expect(request.body == nil)
+        #expect(request.method == "POST")
+        #expect(request.url.path() == "/events")
+        #expect(request.body.contains(#""name":"checkout_started""#))
     }
 
     @Test func requestHistoryIsLimitedAndCanBeCleared() async throws {
@@ -781,7 +664,7 @@ struct DavyTests {
         let telemetry = makeDavy(
             directory: directory,
             transport: transport,
-            format: .queryString(maxConcurrentRequests: 1),
+            batchSize: 1,
             debugHistoryLimit: 2
         )
 
@@ -789,7 +672,8 @@ struct DavyTests {
             telemetry.log(.breadcrumb(name))
         }
         await telemetry.flushAndWait()
-        #expect(await telemetry.debugSnapshot().requests.map(\.url.lastPathComponent) == ["second", "third"])
+        let sentIDs = await telemetry.debugSnapshot().sent.map(\.event.id)
+        #expect(await telemetry.debugSnapshot().requests.map(\.eventIDs) == [[sentIDs[0]], [sentIDs[1]]])
 
         telemetry.clearDebugHistory()
         #expect(await telemetry.debugSnapshot().requests.isEmpty)
@@ -1046,7 +930,7 @@ struct DavyTests {
         let transport = MockTransport()
         let telemetry = makeDavy(directory: directory, transport: transport)
 
-        telemetry.log(DavyError.invalidRequest, name: "request_failed", info: ["error_type": "custom", "stage": "upload"])
+        telemetry.log(DavyError.invalidResponse, name: "request_failed", info: ["error_type": "custom", "stage": "upload"])
         await telemetry.flushAndWait()
 
         let event = try #require(await transport.sentEvents.first)

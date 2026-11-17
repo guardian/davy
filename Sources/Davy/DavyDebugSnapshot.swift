@@ -174,17 +174,14 @@ extension DavyDebugSnapshot {
 
         /// A random identifier for the request.
         public let id: UUID
-        /// The HTTP method, `POST` or `GET`.
+        /// The HTTP method, `POST`.
         public let method: String
         /// The full URL, including any query string.
         public let url: URL
-        /// The header fields Davy set: ``DavyConfiguration/headers`` and, for JSON bodies,
-        /// `Content-Type`.
+        /// The header fields Davy set: `Content-Type` and ``DavyConfiguration/headers``.
         public let headers: [String: String]
-        /// The JSON body, or `nil` for
-        /// ``DavyConfiguration/RequestFormat/queryString(method:maxConcurrentRequests:)`` requests,
-        /// which have none.
-        public let body: String?
+        /// The JSON body.
+        public let body: String
         /// The IDs of the events in the request, oldest first.
         public let eventIDs: [UUID]
         /// When the request was sent.

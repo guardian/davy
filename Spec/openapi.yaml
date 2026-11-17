@@ -5,30 +5,18 @@ info:
   summary: The requests Davy clients send to your endpoint, and the responses they act on.
   description: |
     The contract between Davy clients and the endpoint that receives their events. Every client
-    sends exactly these requests, so events from every platform can be queried together. The Swift
-    client for Apple platforms and the Kotlin client for Android implement it, and their tests check
-    their requests against it and against the shared examples in `fixtures.json`.
-
-    An app uses one of three request formats, set by `DavyConfiguration.format`:
-
-    - **JSON batch** (the default): a `POST` to the endpoint with up to `batchSize` events from a
-      single session as a JSON body.
-    - **JSON event**: one request per event, a `POST` to the endpoint with the same JSON body as a
-      batch containing exactly one event, so the same endpoint handles both.
-    - **Query string**: one request per event with an empty body, the event's name appended to the
-      endpoint's path, and every other field as a query parameter. `POST` (the default) or `GET`.
+    sends `POST` requests to the configured `endpoint` with up to `batchSize` (default 100) events
+    from a single session as a JSON body, so events from every platform can be queried together.
+    The Swift client for Apple platforms and the Kotlin client for Android implement it, and their
+    tests check their requests against it and against the shared examples in `fixtures.json`.
 
     Rules this document can't express:
 
     - Every request includes the headers in `DavyConfiguration.headers`. Requests never send
       cookies or use a local cache.
-    - In the query string format, parameters are sent in the order listed here, after any query
-      items already in the endpoint, and omitted when they have no value. Everything except
-      `A–Z a–z 0–9 - . _ ~` is percent-encoded, including `+`, in both the path and the query.
-      `info` and `sessionInfo` are compact JSON with sorted keys and unescaped slashes.
-    - Each event, measured as the length of its query string URL, is at most `maxEventSize` bytes
-      (default 2,048), whichever format is used. A larger event is replaced with the error
-      `davy_event_too_large`.
+    - Each event, measured as the UTF-8 byte length of a single-event JSON request body with the
+      session data, is at most `maxEventSize` bytes (default 4,096). A larger event is replaced
+      with the error `davy_event_too_large`.
     - Delivery is at least once, so the same event can arrive more than once with the same ID.
     - `timestamp` and `sentAt` come from the device's clock, which can be wrong. `sentAt` is set
       each time a request is sent, so a retry has a later `sentAt` than the attempt before it. If
@@ -42,34 +30,21 @@ info:
 servers:
   - url: https://api.example.com
     description: |
-      An example server. The paths are for the example endpoint `https://api.example.com/events`.
-      For your own, replace this URL with your endpoint's scheme and host, and `/events` in each
-      path with your endpoint's path, as set in `DavyConfiguration.endpoint`.
+      An example server. The path `/events` is for the example endpoint
+      `https://api.example.com/events`. For your own, replace this URL with your endpoint's scheme
+      and host, and `/events` with your endpoint's path, as set in `DavyConfiguration.endpoint`.
 # Davy doesn't require authentication. Apps can add headers, such as `Authorization`, with
 # `DavyConfiguration.headers`.
 security: []
-tags:
-  - name: JSON batch
-    description: |
-      Events sent as a JSON body: in batches with `DavyConfiguration.RequestFormat.jsonBatch`, or one
-      per request with `DavyConfiguration.RequestFormat.jsonEvent(maxConcurrentRequests:)`.
-  - name: Query string
-    description: |
-      One event per request with every field in the URL, for servers that can log fields from the
-      URL but not from the body, with `DavyConfiguration.RequestFormat.queryString(method:maxConcurrentRequests:)`.
 paths:
   /events:
     post:
-      tags: [JSON batch]
       operationId: sendBatch
       summary: Send a batch of events
       description: |
         Sent to the endpoint itself, without adding a trailing slash. Contains between 1 and
         `batchSize` (default 100) events, oldest first, all logged in the same session. One request
         is in flight at a time.
-
-        In the JSON event format, each request contains exactly one event, and up to
-        `maxConcurrentRequests` (default 4) are in flight at once, so events can arrive out of order.
       requestBody:
         required: true
         content:
@@ -125,82 +100,11 @@ paths:
           $ref: '#/components/responses/Throttled'
         default:
           $ref: '#/components/responses/Retried'
-  /events/{name}:
-    parameters:
-      - $ref: '#/components/parameters/Name'
-      - $ref: '#/components/parameters/EventId'
-      - $ref: '#/components/parameters/Type'
-      - $ref: '#/components/parameters/Timestamp'
-      - $ref: '#/components/parameters/SentAt'
-      - $ref: '#/components/parameters/SessionId'
-      - $ref: '#/components/parameters/Environment'
-      - $ref: '#/components/parameters/AppVersion'
-      - $ref: '#/components/parameters/Build'
-      - $ref: '#/components/parameters/OS'
-      - $ref: '#/components/parameters/OSVersion'
-      - $ref: '#/components/parameters/DeviceModel'
-      - $ref: '#/components/parameters/Locale'
-      - $ref: '#/components/parameters/SessionInfo'
-      - $ref: '#/components/parameters/Info'
-    post:
-      tags: [Query string]
-      operationId: sendEventWithPost
-      summary: Send one event with POST
-      description: |
-        The default method for the query string format. The body is empty. Up to
-        `maxConcurrentRequests` (default 4) requests are in flight at once, so events can arrive out
-        of order; use `timestamp` to order them.
-      responses:
-        '2XX':
-          $ref: '#/components/responses/Stored'
-        '400':
-          $ref: '#/components/responses/Rejected'
-        '413':
-          $ref: '#/components/responses/Rejected'
-        '414':
-          $ref: '#/components/responses/Rejected'
-        '422':
-          $ref: '#/components/responses/Rejected'
-        '429':
-          $ref: '#/components/responses/Throttled'
-        '431':
-          $ref: '#/components/responses/Rejected'
-        '503':
-          $ref: '#/components/responses/Throttled'
-        default:
-          $ref: '#/components/responses/Retried'
-    get:
-      tags: [Query string]
-      operationId: sendEventWithGet
-      summary: Send one event with GET
-      description: |
-        Identical to the `POST` request apart from the method. Up to `maxConcurrentRequests`
-        (default 4) requests are in flight at once, so events can arrive out of order; use
-        `timestamp` to order them.
-      responses:
-        '2XX':
-          $ref: '#/components/responses/StoredNoStore'
-        '400':
-          $ref: '#/components/responses/Rejected'
-        '413':
-          $ref: '#/components/responses/Rejected'
-        '414':
-          $ref: '#/components/responses/Rejected'
-        '422':
-          $ref: '#/components/responses/Rejected'
-        '429':
-          $ref: '#/components/responses/Throttled'
-        '431':
-          $ref: '#/components/responses/Rejected'
-        '503':
-          $ref: '#/components/responses/Throttled'
-        default:
-          $ref: '#/components/responses/Retried'
 components:
   schemas:
     Batch:
       type: object
-      description: The body of a JSON batch request.
+      description: The body of a request.
       required: [sentAt, session, events]
       additionalProperties: false
       properties:
@@ -379,99 +283,6 @@ components:
         no region. Omitted when there's no language.
       pattern: '^[a-z]{2,3}(_([A-Z]{2}|[0-9]{3}))?$'
       examples: [en_GB, es_419, fr]
-  parameters:
-    Name:
-      name: name
-      in: path
-      required: true
-      description: |
-        The event's name, percent-encoded and appended to the endpoint's path, with a `/` between
-        them unless the endpoint already ends with one.
-      schema:
-        $ref: '#/components/schemas/EventName'
-    EventId:
-      name: eventId
-      in: query
-      required: true
-      schema:
-        $ref: '#/components/schemas/EventId'
-    Type:
-      name: type
-      in: query
-      required: true
-      schema:
-        $ref: '#/components/schemas/EventType'
-    Timestamp:
-      name: timestamp
-      in: query
-      required: true
-      schema:
-        $ref: '#/components/schemas/Timestamp'
-    SentAt:
-      name: sentAt
-      in: query
-      required: true
-      schema:
-        $ref: '#/components/schemas/SentAt'
-    SessionId:
-      name: sessionId
-      in: query
-      required: true
-      schema:
-        $ref: '#/components/schemas/SessionId'
-    Environment:
-      name: environment
-      in: query
-      schema:
-        $ref: '#/components/schemas/Environment'
-    AppVersion:
-      name: appVersion
-      in: query
-      schema:
-        $ref: '#/components/schemas/AppVersion'
-    Build:
-      name: build
-      in: query
-      schema:
-        $ref: '#/components/schemas/Build'
-    OS:
-      name: os
-      in: query
-      required: true
-      schema:
-        $ref: '#/components/schemas/OS'
-    OSVersion:
-      name: osVersion
-      in: query
-      required: true
-      schema:
-        $ref: '#/components/schemas/OSVersion'
-    DeviceModel:
-      name: deviceModel
-      in: query
-      schema:
-        $ref: '#/components/schemas/DeviceModel'
-    Locale:
-      name: locale
-      in: query
-      schema:
-        $ref: '#/components/schemas/Locale'
-    SessionInfo:
-      name: sessionInfo
-      in: query
-      description: The session's `info` as compact JSON with sorted keys. Omitted when empty.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Info'
-    Info:
-      name: info
-      in: query
-      description: The event's `info` as compact JSON with sorted keys. Omitted when empty.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Info'
   headers:
     RetryAfter:
       description: |
@@ -488,16 +299,6 @@ components:
   responses:
     Stored:
       description: The events are stored and removed from the device. The body is ignored.
-    StoredNoStore:
-      description: |
-        The event is stored and removed from the device. The body is ignored. Include
-        `Cache-Control: no-store` so proxies don't cache the `GET` request.
-      headers:
-        Cache-Control:
-          description: '`no-store`, so proxies never answer a later request from a cache.'
-          schema:
-            type: string
-            const: no-store
     Rejected:
       description: |
         The server will never accept these events, so the client discards them rather than retrying,
@@ -506,9 +307,9 @@ components:
     Throttled:
       description: |
         The client sends nothing until the `Retry-After` delay ends, even when flushing or after a
-        relaunch, then resumes with a single request. The events are kept. Use it to slow down or
-        pause clients, for example during an incident or a cost spike. Without a valid
-        `Retry-After`, the events are retried with backoff instead.
+        relaunch. The events are kept. Use it to slow down or pause clients, for example during an
+        incident or a cost spike. Without a valid `Retry-After`, the events are retried with
+        backoff instead.
       headers:
         Retry-After:
           $ref: '#/components/headers/RetryAfter'
@@ -517,4 +318,4 @@ components:
         Any other response, or no response at all, for example a network error, a 5xx response, or a
         401, 403, or 404 that likely means the endpoint is misconfigured. The events are kept, and
         the client retries with exponential backoff and jitter, starting at up to 5 seconds and
-        doubling to at most 5 minutes, with a single request until one succeeds.
+        doubling to at most 5 minutes.

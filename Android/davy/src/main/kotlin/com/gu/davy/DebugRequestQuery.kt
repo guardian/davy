@@ -20,7 +20,7 @@ internal fun DavyDebugSnapshot.requestsContaining(eventId: UUID): List<DavyDebug
 internal fun DavyDebugSnapshot.Request.matches(searchText: String): Boolean {
     val text = searchText.trim()
     if (text.isEmpty()) return true
-    return percentDecoded(url).contains(text, ignoreCase = true) || body?.contains(text, ignoreCase = true) == true
+    return percentDecoded(url).contains(text, ignoreCase = true) || body.contains(text, ignoreCase = true)
 }
 
 /** The method and the URL's path, for example `POST /events`. */
@@ -42,15 +42,9 @@ internal val DavyDebugSnapshot.Request.statusTitle: String
 internal val DavyDebugSnapshot.Request.eventCountTitle: String
     get() = if (eventIds.size == 1) "1 event" else "${eventIds.size} events"
 
-/** The URL's query parameters, percent-decoded, in order. Empty if the URL has no query. */
-internal val DavyDebugSnapshot.Request.queryParameters: List<Pair<String, String>>
-    get() = url.substringBefore('#').substringAfter('?', "").split('&').filter { it.isNotEmpty() }.map { item ->
-        percentDecoded(item.substringBefore('=')) to percentDecoded(item.substringAfter('=', ""))
-    }
-
 /** The body indented with sorted keys if it's JSON, otherwise as is. */
-internal val DavyDebugSnapshot.Request.prettyBody: String?
-    get() = body?.let { DavyJson.prettyJson(it) ?: it }
+internal val DavyDebugSnapshot.Request.prettyBody: String
+    get() = DavyJson.prettyJson(body) ?: body
 
 /** What the outcome meant, for example `Delivered` or `Throttled: retry after 120 s`. A failure's reason is shown separately. */
 internal val DavyDebugSnapshot.Request.Outcome.description: String

@@ -4,12 +4,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
 import org.yaml.snakeyaml.Yaml
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.URI
-import java.nio.ByteBuffer
-import java.nio.charset.CharacterCodingException
-import java.nio.charset.CodingErrorAction
 import java.util.regex.PatternSyntaxException
 
 /** A value read from JSON or YAML. */
@@ -87,10 +83,6 @@ internal sealed class Json {
  *
  * Anything in the spec this doesn't understand, such as a new schema keyword, is reported as a
  * violation rather than skipped, so no part of the spec silently goes unchecked.
- *
- * It also checks the rules the spec states in prose for query string requests: parameters are sent
- * in the listed order with none unknown or repeated, and everything except `A–Z a–z 0–9 - . _ ~` is
- * percent-encoded.
  */
 internal class OpenApiSpec(private val document: Json) {
     companion object {
@@ -106,35 +98,7 @@ internal class OpenApiSpec(private val document: Json) {
          * too, so the spec uses `pattern` for formats that must be checked.
          */
         private val annotations = setOf("description", "examples", "title", "format", "default", "deprecated", "\$comment")
-        private const val UNRESERVED_OR_ESCAPE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~%"
         private val methods = listOf("get", "put", "post", "delete", "options", "head", "patch", "trace")
-
-        /** [value] percent-decoded as UTF-8, without treating `+` as a space, or `null` if invalid. */
-        fun percentDecoded(value: String): String? {
-            val bytes = ByteArrayOutputStream()
-            var index = 0
-            while (index < value.length) {
-                val char = value[index]
-                if (char == '%') {
-                    val hex = value.substring(index + 1, minOf(index + 3, value.length))
-                    if (hex.length != 2 || !hex.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }) return null
-                    bytes.write(hex.toInt(16))
-                    index += 3
-                } else {
-                    bytes.write(char.toString().toByteArray())
-                    index += 1
-                }
-            }
-            return try {
-                Charsets.UTF_8.newDecoder()
-                    .onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT)
-                    .decode(ByteBuffer.wrap(bytes.toByteArray()))
-                    .toString()
-            } catch (_: CharacterCodingException) {
-                null
-            }
-        }
     }
 
     /** Every operation, named like `"POST /events"`. */
@@ -169,105 +133,15 @@ internal class OpenApiSpec(private val document: Json) {
             return listOf("The URL isn't on the spec's server")
         }
         val path = urlPath.removePrefix(serverPath)
-        val match = matchPath(path) ?: return listOf("No path in the spec matches $path")
+        val pathItem = document["paths"]?.get(path) ?: return listOf("No path in the spec matches $path")
         val method = request.method.lowercase()
-        val operation = match.item[method] ?: return listOf("${match.template} has no ${method.uppercase()} operation")
-        return parameterViolations(url, match.values, match.item, operation) + bodyViolations(request, operation)
-    }
-
-    private class PathMatch(val template: String, val item: Json, val values: Map<String, String>)
-
-    /**
-     * The path item whose template matches [path], preferring paths without templates, as OpenAPI
-     * does, and the still percent-encoded values of its path parameters.
-     */
-    private fun matchPath(path: String): PathMatch? {
-        val segments = path.split('/')
-        val paths = document["paths"]?.obj.orEmpty().entries.sortedWith(compareBy({ '{' in it.key }, { it.key }))
-        for ((template, item) in paths) {
-            val templateSegments = template.split('/')
-            if (templateSegments.size != segments.size) continue
-            val values = mutableMapOf<String, String>()
-            val matches = templateSegments.zip(segments).all { (templateSegment, segment) ->
-                if (templateSegment.startsWith('{') && templateSegment.endsWith('}')) {
-                    values[templateSegment.removeSurrounding("{", "}")] = segment
-                    true
-                } else {
-                    templateSegment == segment
-                }
-            }
-            if (matches) return PathMatch(template, item, values)
-        }
-        return null
-    }
-
-    private fun parameterViolations(url: URI, pathValues: Map<String, String>, pathItem: Json, operation: Json): List<String> {
-        val violations = mutableListOf<String>()
-        // Split by hand rather than decoding first, so the encoding can be checked.
-        val queryItems = url.rawQuery.orEmpty().split('&').filter { it.isNotEmpty() }.map { item ->
-            val parts = item.split('=', limit = 2)
-            (percentDecoded(parts[0]) ?: parts[0]) to parts.getOrElse(1) { "" }
-        }
-        val specQueryNames = mutableListOf<String>()
-
-        for (reference in pathItem["parameters"]?.array.orEmpty() + operation["parameters"]?.array.orEmpty()) {
-            val parameter = resolve(reference)
-            val name = parameter?.get("name")?.string
-            val location = parameter?.get("in")?.string
-            if (parameter == null || name == null || location == null) {
-                violations += "A parameter in the spec can't be resolved or has no name or location"
-                continue
-            }
-            val label = "The $location parameter $name"
-            val encoded = when (location) {
-                "path" -> pathValues[name] ?: run {
-                    violations += "$label isn't in the path template"
-                    null
-                }
-                "query" -> {
-                    specQueryNames += name
-                    val matching = queryItems.filter { it.first == name }
-                    if (matching.size > 1) violations += "$label is sent ${matching.size} times"
-                    if (matching.isEmpty() && parameter["required"] == Json.Bool(true)) {
-                        violations += "$label is required but missing"
-                    }
-                    matching.firstOrNull()?.second
-                }
-                else -> {
-                    violations += "$label isn't supported by OpenApiSpec, so add support for it"
-                    null
-                }
-            } ?: continue
-
-            val value = percentDecoded(encoded)
-            if (!encoded.all { it in UNRESERVED_OR_ESCAPE } || value == null) {
-                violations += "$label isn't percent-encoded except for A–Z a–z 0–9 - . _ ~: $encoded"
-                continue
-            }
-            violations += valueViolations(value, parameter, label)
-        }
-
-        val sentNames = queryItems.map { it.first }
-        sentNames.filter { it !in specQueryNames }.forEach { violations += "The query parameter $it isn't in the spec" }
-        val sentOrder = sentNames.filter { it in specQueryNames }
-        val specOrder = specQueryNames.filter { it in sentNames }
-        if (sentOrder != specOrder) violations += "Query parameters are sent in the order $sentOrder, not $specOrder"
-        return violations
-    }
-
-    private fun valueViolations(value: String, parameter: Json, label: String): List<String> {
-        parameter["schema"]?.let { return schemaViolations(Json.Str(value), it, label) }
-        val content = parameter["content"]?.obj
-        val schema = content?.get("application/json")?.get("schema")
-        if (content?.size != 1 || schema == null) {
-            return listOf("$label has neither a schema nor only JSON content, which OpenApiSpec doesn't support")
-        }
-        val json = Json.parse(value) ?: return listOf("$label isn't valid JSON: $value")
-        return schemaViolations(json, schema, label)
+        val operation = pathItem[method] ?: return listOf("$path has no ${method.uppercase()} operation")
+        val queryViolations = if (url.rawQuery.isNullOrEmpty()) emptyList() else listOf("The spec defines no query parameters for $path")
+        return queryViolations + bodyViolations(request, operation)
     }
 
     private fun bodyViolations(request: HttpRequest, operation: Json): List<String> {
-        val body = request.body ?: ByteArray(0)
+        val body = request.body
         val reference = operation["requestBody"]
             ?: return if (body.isEmpty()) emptyList() else listOf("The request has a body, but the spec doesn't define one")
         val requestBody = resolve(reference) ?: return listOf("The spec's requestBody can't be resolved")

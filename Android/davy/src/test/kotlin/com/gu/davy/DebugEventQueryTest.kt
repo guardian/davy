@@ -1,7 +1,6 @@
 package com.gu.davy
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 import java.util.UUID
 
@@ -40,7 +39,7 @@ class DebugEventQueryTest {
 
     private fun request(
         url: String,
-        body: String? = null,
+        body: String = "{}",
         eventIds: List<UUID> = listOf(UUID.randomUUID()),
         statusCode: Int? = 200,
         outcome: DavyDebugSnapshot.Request.Outcome = DavyDebugSnapshot.Request.Outcome.Delivered,
@@ -102,30 +101,28 @@ class DebugEventQueryTest {
 
     @Test
     fun requestSearchMatchesTheDecodedUrlOrBodyIgnoringCase() {
-        val queryString = request("https://example.com/events/checkout_started?info=%7B%22step%22%3A%22Caf%C3%A9+1%22%7D")
+        val withQuery = request("https://example.com/events?env=Caf%C3%A9+1", body = """{"events":[{"name":"checkout_started"}]}""")
         val batch = request("https://example.com/events", body = """{"events":[{"name":"payment_declined"}]}""")
-        fun matching(searchText: String) = listOf(queryString, batch).filter { it.matches(searchText) }
+        fun matching(searchText: String) = listOf(withQuery, batch).filter { it.matches(searchText) }
 
-        assertEquals(listOf(queryString, batch), matching("  "))
-        assertEquals(listOf(queryString), matching(" \"STEP\":\"café+1\" "))
+        assertEquals(listOf(withQuery, batch), matching("  "))
+        assertEquals(listOf(withQuery), matching(" ENV=café+1 "))
         assertEquals(listOf(batch), matching("Payment_Declined"))
-        assertEquals(listOf(queryString, batch), matching("example.com/events"))
+        assertEquals(listOf(withQuery, batch), matching("example.com/events"))
         assertEquals(emptyList<DavyDebugSnapshot.Request>(), matching("refund"))
     }
 
     @Test
     fun requestsAreDescribedByPathStatusEventsAndOutcome() {
-        val unanswered = request("https://example.com/v1/events?key=a%26b&empty=", body = "{}", statusCode = null)
+        val unanswered = request("https://example.com/v1/events", body = "{}", statusCode = null)
         assertEquals("POST /v1/events", unanswered.methodAndPath)
         assertEquals("No response", unanswered.statusTitle)
         assertEquals("1 event", unanswered.eventCountTitle)
-        assertEquals(listOf("key" to "a&b", "empty" to ""), unanswered.queryParameters)
 
         val delivered = request("https://example.com", eventIds = List(3) { UUID.randomUUID() })
         assertEquals("POST /", delivered.methodAndPath)
         assertEquals("HTTP 200", delivered.statusTitle)
         assertEquals("3 events", delivered.eventCountTitle)
-        assertEquals(emptyList<Pair<String, String>>(), delivered.queryParameters)
 
         assertEquals(
             listOf("Delivered", "Rejected", "Throttled: retry after 120 s", "Failed"),
@@ -165,6 +162,5 @@ class DebugEventQueryTest {
         )
         assertEquals("not json", request("https://example.com/events", body = "not json").prettyBody)
         assertEquals("{} {}", request("https://example.com/events", body = "{} {}").prettyBody)
-        assertNull(request("https://example.com/events").prettyBody)
     }
 }

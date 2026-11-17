@@ -88,16 +88,16 @@ struct DebugEventFilterTests {
     }
 
     @Test func requestSearchMatchesTheDecodedURLOrBodyIgnoringCase() throws {
-        let queryString = request(
-            url: "https://api.example.com/events/checkout_started?type=breadcrumb&info=%7B%22step%22%3A%22Cart%22%7D",
-            body: nil
+        let first = request(
+            url: "https://api.example.com/events?step=%22Cart%22",
+            body: #"{"events":[{"name":"checkout_started"}]}"#
         )
-        let batch = request(url: "https://api.example.com/events", body: #"{"events":[{"name":"payment_declined"}]}"#)
+        let second = request(url: "https://api.example.com/events", body: #"{"events":[{"name":"payment_declined"}]}"#)
 
-        let matching = { (text: String) in [queryString, batch].filter { $0.matches(searchText: text) }.map(\.url) }
-        #expect(matching("  ") == [queryString.url, batch.url])
-        #expect(matching(#""step":"cart""#) == [queryString.url])
-        #expect(matching("PAYMENT_DECLINED") == [batch.url])
+        let matching = { (text: String) in [first, second].filter { $0.matches(searchText: text) }.map(\.body) }
+        #expect(matching("  ") == [first.body, second.body])
+        #expect(matching(#""cart""#) == [first.body])
+        #expect(matching("PAYMENT_DECLINED") == [second.body])
         #expect(matching("refund").isEmpty)
     }
 
@@ -112,13 +112,12 @@ struct DebugEventFilterTests {
             }
             """)
         #expect(request(url: "https://api.example.com/events", body: "not json").prettyBody == "not json")
-        #expect(request(url: "https://api.example.com/events/a", body: nil).prettyBody == nil)
-        #expect(request(url: "https://api.example.com/events/a", body: nil, statusCode: nil).statusTitle == "No response")
+        #expect(request(url: "https://api.example.com/events", body: "{}", statusCode: nil).statusTitle == "No response")
         #expect(json.statusTitle == "HTTP 200")
     }
 }
 
-private func request(url: String, body: String?, statusCode: Int? = 200) -> DavyDebugSnapshot.Request {
+private func request(url: String, body: String, statusCode: Int? = 200) -> DavyDebugSnapshot.Request {
     DavyDebugSnapshot.Request(
         id: UUID(),
         method: "POST",

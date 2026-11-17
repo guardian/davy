@@ -30,12 +30,6 @@ private let DavyConfig = DavyConfiguration(
         URL(string: "https://api.example.com/events")!
         #endif
     }(),
-    // POST batches here as `{ "session": { … }, "events": [ … ] }` (the default). Use
-    // `.jsonEvent(maxConcurrentRequests:)` to send each event as its own request here, with the
-    // same body containing just that event. Use `.queryString(method:maxConcurrentRequests:)` to
-    // send each event as its own request to `<endpoint>/<name>?eventId=…&type=…&sessionId=…`, for
-    // servers that log URLs, not bodies.
-    format: .jsonBatch,
     // Lets you separate test data from real usage. TestFlight and App Store builds share a binary,
     // so a "beta" value needs a runtime check or a separate build configuration.
     environment: {
@@ -45,8 +39,8 @@ private let DavyConfig = DavyConfiguration(
         "production"
         #endif
     }(),
-    // Additional details about the app and session, sent with every event in `session.info` (or
-    // the `sessionInfo` query parameter). Don't include personal data or identifiers.
+    // Additional details about the app and session, sent with every event in `session.info`. Don't
+    // include personal data or identifiers.
     info: ["edition": "uk"],
     // Crash on names that aren't lower snake case (like "checkoutStarted") in debug builds so they're
     // fixed before shipping, but still send them in release builds. `.sendError` reports them as a
@@ -58,9 +52,9 @@ private let DavyConfig = DavyConfiguration(
         .ignore
         #endif
     }(),
-    // Replace events larger than this many bytes, measured as a query string URL, with a
-    // "davy_event_too_large" error (default 2,048, within common server URL limits).
-    maxEventSize: 2048,
+    // Replace events larger than this many bytes, measured as a single-event JSON request body,
+    // with a "davy_event_too_large" error (default 4,096).
+    maxEventSize: 4096,
     // Log "app_backgrounded" when the app moves to the background, just before pending events are
     // sent, and "app_foregrounded" when it returns (default false). Launching isn't logged, so
     // this app logs its own "app_launched".

@@ -90,22 +90,6 @@ class HttpUrlConnectionTransportTest {
     }
 
     @Test
-    fun sendsAQueryStringRequestWithoutABody() {
-        val server = server("HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
-        val path = "/events/checkout_started?eventId=1B4E28BA-2FA1-11D2-883F-0016D3CCA427&info=%7B%22a%22%3A%22b%2Bc%22%7D"
-
-        val result = HttpUrlConnectionTransport().deliver(HttpRequest("GET", server.url + path, emptyMap(), null))
-
-        assertEquals(204, result.statusCode)
-        assertEquals(DeliveryOutcome.Delivered, result.outcome)
-        val received = server.received.poll(5, TimeUnit.SECONDS)!!
-        // Sent exactly as built, without decoding or re-encoding the query.
-        assertEquals("GET $path HTTP/1.1", received.requestLine)
-        assertNull(received.headers["content-length"]?.takeIf { it != "0" })
-        assertEquals(0, received.body.size)
-    }
-
-    @Test
     fun noResponseIsAFailure() {
         val port = ServerSocket(0).use { it.localPort }
 

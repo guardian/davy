@@ -180,12 +180,12 @@ class DavyDebugTest {
         )
         assertEquals(listOf(500, 200), requests.map { it.statusCode })
         assertEquals(2, requests.map { it.id }.toSet().size)
-        assertEquals(transport.requests.map { it.body!!.decodeToString() }, requests.map { it.body })
+        assertEquals(transport.requests.map { it.body.decodeToString() }, requests.map { it.body })
         for (request in requests) {
             assertEquals("POST", request.method)
             assertEquals("https://example.com/events", request.url)
             assertEquals(mapOf("Content-Type" to "application/json", "Authorization" to "Bearer token"), request.headers)
-            assertEquals(listOf("checkout_started", "checkout_finished"), JSONObject(request.body!!).getJSONArray("events").objects().map { it.getString("name") })
+            assertEquals(listOf("checkout_started", "checkout_finished"), JSONObject(request.body).getJSONArray("events").objects().map { it.getString("name") })
             assertEquals(pending.map { it.id }, request.eventIds)
             assertTrue(request.durationMillis >= 0)
             assertTrue(request.sentAtMillis in start..end)
@@ -220,13 +220,16 @@ class DavyDebugTest {
             val telemetry = makeDavy(
                 directory(),
                 transport,
-                format = RequestFormat.QueryString(maxConcurrentRequests = 1),
+                batchSize = 1,
                 debugHistoryLimit = limit,
             ).tracked()
 
             repeat(3) { telemetry.log(Event.Breadcrumb("event_$it")) }
             telemetry.flushAndWaitBlocking()
-            assertEquals(transport.requests.takeLast(limit).map { it.url }, telemetry.debugSnapshotBlocking().requests.map { it.url })
+            assertEquals(
+                transport.requests.takeLast(limit).map { it.body.decodeToString() },
+                telemetry.debugSnapshotBlocking().requests.map { it.body },
+            )
 
             telemetry.clearDebugHistory()
             assertTrue(telemetry.debugSnapshotBlocking().requests.isEmpty())

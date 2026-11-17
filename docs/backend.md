@@ -6,9 +6,9 @@ Every platform sends exactly the same requests, defined in an OpenAPI 3.1 docume
 
 Your endpoint should:
 
-1. **Accept your chosen [request format](#request-formats).**
+1. **Accept `POST` requests with a JSON body;** see [Request format](#request-format).
 2. **Respond with 2xx once the events are stored.** The response body is ignored.
-3. **Remove duplicates by event ID** (`id`, or `eventId` in the query string format), since [delivery is at least once](delivery.md#delivery-guarantees).
+3. **Remove duplicates by event ID** (`id`), since [delivery is at least once](delivery.md#delivery-guarantees).
 4. **Respond with 400, 413, 414, 422, or 431** to requests it will never accept, so their events are discarded instead of retried.
 5. **Respond with 429 or 503 and `Retry-After`** to slow down or pause clients, for example during an incident or a cost spike.
 6. **Expect late events.** Devices send events when they come back online, up to `maxEventAge` (default 30 days) after they were logged, so the most recent minutes of data are always incomplete. Allow for this in dashboards and alerts.
@@ -16,21 +16,11 @@ Your endpoint should:
 8. **Treat the endpoint as public.** Anything built into an app, including an `Authorization` header, can be extracted from it, so validate what you receive. Ignore fields you don't recognize rather than rejecting them, since rejected events are discarded.
 9. **Not log IP addresses**, if you want to keep reports anonymous.
 
-## Request formats
+## Request format
 
-Set `format` to choose how events are encoded:
+Events are sent as a `POST` to the endpoint with `Content-Type: application/json` and any headers in `headers`. Requests never use cookies or the local cache.
 
-| Format | Requests |
-| --- | --- |
-| JSON batch (default) | Up to `batchSize` events per `POST`, as a JSON body |
-| JSON event | One `POST` per event, with the same JSON body as a batch of one, up to 4 in flight by default |
-| Query string | One request per event with an empty body and every field in the URL; `POST` (default) or `GET`, up to 4 in flight by default |
-
-Every request includes the headers in `headers`. Requests never use cookies or the local cache.
-
-### JSON batch
-
-A `POST` to the endpoint with `Content-Type: application/json`. Each request contains events from a single session, along with common app and device data captured when that session started:
+Each request contains between 1 and `batchSize` events from a single session, along with common app and device data captured when that session started:
 
 ```json
 {
@@ -68,42 +58,13 @@ A `POST` to the endpoint with `Content-Type: application/json`. Each request con
 }
 ```
 
-### JSON event
-
-Like a JSON batch, but each request contains exactly one event, so the same endpoint handles both and switching between them needs no server changes:
-
-```json
-{
-  "sentAt": "2026-11-09T11:39:00.250Z",
-  "session": { "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF", "os": "iOS", "osVersion": "26.1.0" },
-  "events": [
-    { "id": "1B4E28BA-2FA1-11D2-883F-0016D3CCA427", "type": "breadcrumb", "name": "checkout_started", "timestamp": "2026-11-09T11:38:55.780Z" }
-  ]
-}
-```
-
-Use it if your server handles one event per request, or so that rejecting one event doesn't discard the others in its batch. Up to `maxConcurrentRequests` (default 4) requests are in flight at once.
-
-### Query string
-
-For servers that can log fields from the URL but not from the body, such as a CDN logging requests straight to a data warehouse. The event's name is appended to the endpoint's path, and every other field is a query parameter, omitted if it has no value:
-
-```
-POST https://api.example.com/events/payment_declined?eventId=9C5B94B1-…&type=error&timestamp=2026-11-09T11%3A38%3A57.112Z&sentAt=2026-11-09T11%3A39%3A00.250Z&sessionId=6F9619FF-…&environment=production&appVersion=1.2.0&build=45&os=Android&osVersion=15.0.0&deviceModel=Pixel%209&locale=en_GB&info=%7B%22cpu_percent%22%3A%2212%22%2C%22low_power_mode%22%3A%22false%22%2C%22memory_available_mb%22%3A%22190%22%2C%22memory_used_mb%22%3A%22143%22%2C%22reason%22%3A%22card_expired%22%2C%22thermal_state%22%3A%22none%22%7D
-```
-
-- Parameters are, in this order: `eventId`, `type`, `timestamp`, and `sentAt` from the event and request; `sessionId`, `environment`, `appVersion`, `build`, `os`, `osVersion`, `deviceModel`, `locale`, and `sessionInfo` from the session; then the event's `info`.
-- `sessionInfo` and `info` are JSON object strings with sorted keys.
-- Everything except `A–Z a–z 0–9 - . _ ~` is percent-encoded, including `+`, so values decode the same way on every server.
-- Query items already in the endpoint are kept.
-- With `GET`, the server should respond with `Cache-Control: no-store` so proxies don't cache it.
-- URLs are at most `maxEventSize` bytes (default 2,048); see [Event size](logging-events.md#event-size). If you raise it, note that a server rejecting a URL as too long with 414 causes the event to be discarded.
+Set `batchSize` to `1` to send each event as its own request with a single-element `events` array.
 
 ## Session fields
 
 | Field | Description |
 | --- | --- |
-| `id` | A random UUID generated when the instance is created, typically once per launch; `sessionId` in the query string format |
+| `id` | A random UUID generated when the instance is created, typically once per launch |
 | `environment` | The configured `environment`, for example `debug`, `beta`, or `production`; omitted if not set |
 | `appVersion` | The app's version: `CFBundleShortVersionString` on Apple platforms, `versionName` on Android; omitted if missing |
 | `build` | The app's build number: `CFBundleVersion` on Apple platforms, `versionCode` on Android; omitted if missing |
@@ -111,7 +72,7 @@ POST https://api.example.com/events/payment_declined?eventId=9C5B94B1-…&type=e
 | `osVersion` | `major.minor.patch`, for example `26.1.0`, or `15.0.0` for Android 15 |
 | `deviceModel` | The hardware model identifier on Apple platforms, such as `iPhone17,1`, or `Simulator`; the model name on Android, such as `Pixel 9` |
 | `locale` | The device's language and region only, for example `en_GB`, or just the language if there's no region |
-| `info` | The configured `info` and any entries added with `addSessionInfo`, as strings, for additional app and session details; `sessionInfo` in the query string format; omitted if empty |
+| `info` | The configured `info` and any entries added with `addSessionInfo`, as strings, for additional app and session details; omitted if empty |
 
 The session ID is kept in memory and never reused, so it links events within a session without identifying the user or device across sessions. Events left over from a previous launch are sent in their own request with their original session data, so they're attributed to the app and OS version they were logged in, even after an update.
 
@@ -119,9 +80,9 @@ The session ID is kept in memory and never reused, so it links events within a s
 
 | Field | Description |
 | --- | --- |
-| `id` | A random UUID generated when the event is logged and sent unchanged with every retry, so the server can discard duplicates; `eventId` in the query string format |
+| `id` | A random UUID generated when the event is logged and sent unchanged with every retry, so the server can discard duplicates |
 | `type` | `breadcrumb` or `error` |
-| `name` | The name the event was logged with; part of the path in the query string format |
+| `name` | The name the event was logged with |
 | `info` | The event's details as strings, with [diagnostics](#diagnostics) added for errors; omitted if empty |
 | `timestamp` | When the event was logged, by the device's clock, as ISO 8601 in UTC with milliseconds |
 
@@ -133,7 +94,7 @@ Like event timestamps, it is ISO 8601 in UTC with exactly three millisecond digi
 
 | Field | Description |
 | --- | --- |
-| `sentAt` | When the request was sent, by the device's clock, in the same format as `timestamp`. Set again for every attempt, so a retry has a later `sentAt`; the same for every event in a request. A top-level field in the JSON formats, and a query parameter in the query string format |
+| `sentAt` | When the request was sent, by the device's clock, in the same format as `timestamp`. Set again for every attempt, so a retry has a later `sentAt`; the same for every event in a request |
 
 ## Fixing clock differences
 

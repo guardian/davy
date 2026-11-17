@@ -5,7 +5,6 @@ import com.gu.davy.Davy
 import com.gu.davy.DavyConfiguration
 import com.gu.davy.Event
 import com.gu.davy.InvalidEventNameAction
-import com.gu.davy.RequestFormat
 import java.net.URI
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.seconds
@@ -35,24 +34,18 @@ class ExampleApplication : Application() {
             // Replace with your own endpoint.
             URI("https://api.example.com/events")
         },
-        // POST batches here as `{ "session": { … }, "events": [ … ] }` (the default). Use
-        // `RequestFormat.JsonEvent()` instead to send each event as its own JSON request here,
-        // with the same body as a batch of one, or `RequestFormat.QueryString()` to send each event
-        // as its own request to `<endpoint>/<name>?eventId=…&type=…&sessionId=…`, for servers that
-        // log URLs, not bodies.
-        format = RequestFormat.JsonBatch,
         // Lets you separate test data from real usage, for example "beta" for internal test tracks.
         environment = if (BuildConfig.DEBUG) "debug" else "production",
-        // Additional details about the app and session, sent with every event in `session.info` (or
-        // the `sessionInfo` query parameter). Don't include personal data or identifiers.
+        // Additional details about the app and session, sent with every event in `session.info`.
+        // Don't include personal data or identifiers.
         info = mapOf("edition" to "uk"),
         // Throw on names that aren't lower snake case (like "checkoutStarted") in debug builds so
         // they're fixed before shipping, but ignore them in release builds. `SEND_ERROR` reports them
         // as a "davy_invalid_event_name" error instead, and `LOG_ERROR` discards them.
         onInvalidEventName = if (BuildConfig.DEBUG) InvalidEventNameAction.CRASH else InvalidEventNameAction.IGNORE,
-        // Replace events larger than this many bytes, measured as a query string URL, with a
-        // "davy_event_too_large" error (default 2,048, within common server URL limits).
-        maxEventSize = 2048,
+        // Replace events larger than this many bytes, measured as a single-event JSON request body,
+        // with a "davy_event_too_large" error (default 4,096).
+        maxEventSize = 4096,
         // Log "app_backgrounded" when the app moves to the background, just before pending events
         // are sent, and "app_foregrounded" when it returns (default false). Launching isn't logged,
         // so this app logs its own "app_launched".

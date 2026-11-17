@@ -1,8 +1,7 @@
 import Foundation
 
-/// Errors produced when building or delivering a request.
+/// Errors produced when delivering a request.
 enum DavyError: Error {
-    case invalidRequest
     case invalidResponse
 }
 

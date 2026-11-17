@@ -80,7 +80,7 @@ telemetry.log(Event.Breadcrumb("payment_selected", mapOf("payment_method" to "go
 telemetry.log(Event.Error("payment_declined", mapOf("reason" to "card_expired")))
 ```
 
-Davy sends events in the background, in batches by default, or one request per event if you set `format`; see [Request formats](docs/backend.md#request-formats). Log a breadcrumb such as `app_launched` at launch, so you can count sessions and turn raw counts into rates. Use short, stable names, the same on every platform, and **never include personal data** in names or `info`.
+Davy sends events in the background in batches; see [Your backend](docs/backend.md). Log a breadcrumb such as `app_launched` at launch, so you can count sessions and turn raw counts into rates. Use short, stable names, the same on every platform, and **never include personal data** in names or `info`.
 
 ## Documentation
 

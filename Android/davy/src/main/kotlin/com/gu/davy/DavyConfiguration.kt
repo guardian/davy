@@ -9,35 +9,33 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * Where and how [Davy] delivers events.
  *
- * @property endpoint The URL that events are sent to, in the configured [format].
- * @property format How events are encoded into requests: in batches as a JSON body (the default),
- *   one request per event with a JSON body, or one request per event with every field in the URL.
+ * @property endpoint The URL that events are sent to.
  * @property environment The kind of build sending events, for example `debug`, `beta`, or
  *   `production`, sent as the session's `environment`. Omitted when `null`. Use it to keep test
  *   data apart from real usage.
  * @property info Additional details about the app and session, sent with every event as the
- *   request's `session.info` (or `sessionInfo` query parameter). Omitted when empty. As with event
- *   `info`, don't include personal data or values that identify a person or device across sessions.
+ *   request's `session.info`. Omitted when empty. As with event `info`, don't include personal data
+ *   or values that identify a person or device across sessions.
  * @property onInvalidEventName What [Davy.log] does with an event whose name isn't lower snake
  *   case, such as `checkoutStarted` or `checkout-started` instead of `checkout_started`. A common
  *   setup is [InvalidEventNameAction.CRASH] in debug builds, so inconsistent names are caught
  *   during development, and [InvalidEventNameAction.SEND] or [InvalidEventNameAction.IGNORE] in
  *   release builds.
- * @property maxEventSize The largest an event can be, in bytes, measured as the length of the URL
- *   it's sent to with [RequestFormat.QueryString], including the endpoint, session data, and an
- *   error's diagnostics. Applies whatever the [format], so any event can be sent as a URL. An event
- *   over this size is replaced with the error `davy_event_too_large`, with its name in `info` under
- *   `rejected_name` and its size under `size`; if that's also too large, nothing is sent. The
- *   default, 2,048 bytes, is within the URL limits of common servers, proxies, and CDNs.
+ * @property maxEventSize The largest an event can be, in bytes, measured as the UTF-8 length of a
+ *   single-event JSON request body, including the session data and an error's diagnostics, so a
+ *   single large event can't make a batch request too large for the server to accept. An event over
+ *   this size is replaced with the error `davy_event_too_large`, with its name in `info` under
+ *   `rejected_name` and its size under `size`; if that's also too large, nothing is sent. Defaults
+ *   to 4,096.
  * @property logsAppLifecycleEvents Whether to log a breadcrumb named `app_backgrounded` each time
  *   the app moves to the background, and `app_foregrounded` each time it returns. Launching isn't
  *   logged as `app_foregrounded`, so every `app_foregrounded` follows an `app_backgrounded` in the
  *   same session.
  * @property headers Additional HTTP header fields sent with every request, for example an
  *   `Authorization` header.
- * @property batchSize The number of pending events that triggers an immediate send. With
- *   [RequestFormat.JsonBatch], also the maximum number of events in a single request. Values below
- *   1 are treated as 1. To send each event as soon as it's logged, set it to 1.
+ * @property batchSize The number of pending events that triggers an immediate send, and the
+ *   maximum number of events in a single request. Values below 1 are treated as 1. To send each
+ *   event as soon as it's logged, set it to 1.
  * @property debounceInterval How long to wait after the most recent event before sending a
  *   partially filled batch.
  * @property maxEventAge Events older than this are discarded without being sent.
@@ -50,11 +48,10 @@ import kotlin.time.Duration.Companion.seconds
  */
 public data class DavyConfiguration(
     val endpoint: URI,
-    val format: RequestFormat = RequestFormat.JsonBatch,
     val environment: String? = null,
     val info: Map<String, String> = emptyMap(),
     val onInvalidEventName: InvalidEventNameAction = InvalidEventNameAction.SEND,
-    val maxEventSize: Int = 2048,
+    val maxEventSize: Int = 4096,
     val logsAppLifecycleEvents: Boolean = false,
     val headers: Map<String, String> = emptyMap(),
     val batchSize: Int = 100,
@@ -63,52 +60,6 @@ public data class DavyConfiguration(
     val storageDirectory: File? = null,
     val debugHistoryLimit: Int = 200,
 )
-
-/** How events are encoded into HTTP requests. */
-public sealed class RequestFormat {
-    /**
-     * Events are `POST`ed in batches of up to [DavyConfiguration.batchSize] as a JSON body,
-     * `{ "session": { … }, "events": [ … ] }`, one request at a time.
-     */
-    public data object JsonBatch : RequestFormat()
-
-    /**
-     * Each event is `POST`ed as its own request, with the same JSON body as [JsonBatch] containing
-     * exactly one event: `{ "session": { … }, "events": [ { … } ] }`.
-     *
-     * Suits servers that handle one event per request, and keeps one rejected event from discarding
-     * a whole batch. The same endpoint handles both formats, so switching between them needs no
-     * server changes.
-     *
-     * @property maxConcurrentRequests How many requests can be in flight at once, so events can
-     *   arrive out of order. Values below 1 are treated as 1.
-     */
-    public data class JsonEvent(val maxConcurrentRequests: Int = 4) : RequestFormat()
-
-    /**
-     * Each event is sent as its own request with an empty body. The event's name is appended to the
-     * endpoint's path, and every other field is a query parameter:
-     * `<endpoint>/checkout_started?eventId=…&type=breadcrumb&timestamp=…&sentAt=…&sessionId=…`.
-     *
-     * Suits servers that can log fields from the URL but not from the body, such as a CDN that
-     * logs requests straight to a data warehouse.
-     *
-     * @property method The HTTP method. With `GET`, the server should respond with
-     *   `Cache-Control: no-store` so proxies don't cache it.
-     * @property maxConcurrentRequests How many requests can be in flight at once, so events can
-     *   arrive out of order. Values below 1 are treated as 1.
-     */
-    public data class QueryString(
-        val method: HttpMethod = HttpMethod.POST,
-        val maxConcurrentRequests: Int = 4,
-    ) : RequestFormat()
-}
-
-/** The HTTP method used by [RequestFormat.QueryString]. */
-public enum class HttpMethod {
-    GET,
-    POST,
-}
 
 /**
  * What [Davy.log] does with an event whose name isn't lower snake case: lowercase ASCII letters and

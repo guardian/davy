@@ -172,8 +172,7 @@
   }
 
   function formatLabel(request) {
-    if (request.format === "json") return `JSON, ${request.events.length} event${request.events.length === 1 ? "" : "s"}`;
-    return `Query ${request.method}`;
+    return `${request.events.length} event${request.events.length === 1 ? "" : "s"}`;
   }
 
   // One row per event, newest first, and one for each request without any events.
@@ -232,7 +231,6 @@
       event ? section("Event", pretty(Object.fromEntries(Object.entries(event).filter(([key]) => key !== "duplicate")))) : null,
       request.session ? section("Session", pretty(request.session)) : null,
       request.sentAt ? section("Clock", element("pre", {}, clockSummary(request))) : null,
-      request.endpointQuery.length ? section("Query items already in the endpoint", pretty(Object.fromEntries(request.endpointQuery))) : null,
       section("Request", element("pre", {}, [
         `${request.method} ${request.target}`,
         ...request.headers.map(([name, value]) => `${name}: ${value}`),
