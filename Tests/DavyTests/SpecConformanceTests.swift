@@ -18,35 +18,12 @@ private struct CheckoutError: Error {}
 /// The example endpoint used by the spec's server and paths.
 private let endpoint = URL(string: "https://api.example.com/events")!
 
-private let formats: [DavyConfiguration.RequestFormat] = [.jsonBatch, .jsonEvent(), .queryString(method: .post), .queryString(method: .get)]
+private let formats: [DavyConfiguration.RequestFormat] = [.jsonBatch, .jsonEvent()]
 
 /// Records each way `request` breaks the spec as an issue.
 private func expectConforms(_ request: URLRequest, to spec: OpenAPISpec, sourceLocation: SourceLocation = #_sourceLocation) {
     for violation in spec.violations(of: request) {
         Issue.record("\(request.httpMethod ?? "") \(request.url?.absoluteString ?? ""): \(violation)", sourceLocation: sourceLocation)
-    }
-}
-
-/// `request` with its percent-encoded query items changed by `change`.
-private func changingQuery(of request: URLRequest, _ change: (inout [(name: String, value: String)]) -> Void) throws -> URLRequest {
-    let url = try #require(request.url)
-    var components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
-    var items = (components.percentEncodedQuery ?? "").split(separator: "&").map { item in
-        let parts = item.split(separator: "=", maxSplits: 1)
-        return (name: String(parts[0]), value: String(parts[1]))
-    }
-    change(&items)
-    components.percentEncodedQuery = items.map { "\($0.name)=\($0.value)" }.joined(separator: "&")
-    var request = request
-    request.url = components.url
-    return request
-}
-
-private func changingQueryItem(_ name: String, of request: URLRequest, _ transform: (String) -> String) throws -> URLRequest {
-    try changingQuery(of: request) { items in
-        for index in items.indices where items[index].name == name {
-            items[index].value = transform(items[index].value)
-        }
     }
 }
 
@@ -67,7 +44,6 @@ struct SpecConformanceTests {
     private struct Fixture: Decodable {
         struct Format: Decodable {
             let type: String
-            let method: String?
         }
 
         struct Expected: Decodable {
@@ -104,8 +80,6 @@ struct SpecConformanceTests {
                 format = .jsonBatch
             case "jsonEvent":
                 format = .jsonEvent()
-            case "queryString":
-                format = .queryString(method: try #require(fixture.format.method.flatMap(DavyConfiguration.HTTPMethod.init)))
             default:
                 Issue.record("Unknown format \(fixture.format.type) in \(fixture.name)")
                 continue
@@ -123,6 +97,7 @@ struct SpecConformanceTests {
             #expect(body == expectedBody, comment)
         }
     }
+
     @Test(arguments: formats)
     func everyKindOfEventIsSentAsTheSpecDescribes(format: DavyConfiguration.RequestFormat) async throws {
         let spec = try OpenAPISpec.load()
@@ -155,7 +130,7 @@ struct SpecConformanceTests {
 
         let requests = await transport.requests
         let sentEvents = try requests.reduce(0) { count, request in
-            guard let body = request.httpBody else { return count + 1 }
+            let body = try #require(request.httpBody)
             let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
             return count + ((payload["events"] as? [Any])?.count ?? 0)
         }
@@ -203,25 +178,18 @@ struct SpecConformanceTests {
             session: session, events: [event], sentAt: Date(sentAt, strategy: DavyJSON.timestampStyle)
         )
 
-        if let body = request.httpBody {
-            let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
-            #expect(payload["sentAt"] as? String == sentAt)
-            #expect(payload["sent_at"] == nil)
-            let events = try #require(payload["events"] as? [[String: Any]])
-            #expect(events.first?["timestamp"] as? String == timestamp)
-        } else {
-            let url = try #require(request.url)
-            let items = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
-            #expect(items.filter { $0.name == "sentAt" }.map(\.value) == [sentAt])
-            #expect(!items.contains { $0.name == "sent_at" })
-            #expect(items.first { $0.name == "timestamp" }?.value == timestamp)
-        }
+        let body = try #require(request.httpBody)
+        let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(payload["sentAt"] as? String == sentAt)
+        #expect(payload["sent_at"] == nil)
+        let events = try #require(payload["events"] as? [[String: Any]])
+        #expect(events.first?["timestamp"] as? String == timestamp)
         expectConforms(request, to: try OpenAPISpec.load())
     }
 
     @Test func everyStatusCodeIsHandledAsTheSpecDescribes() throws {
         let spec = try OpenAPISpec.load()
-        #expect(spec.operations.count == 3)
+        #expect(spec.operations.count == 1)
 
         for (name, operation) in spec.operations {
             for statusCode in 100..<600 {
@@ -233,7 +201,7 @@ struct SpecConformanceTests {
                     url: endpoint, statusCode: statusCode, httpVersion: nil, headerFields: nil
                 )))
                 let isAsDescribed = switch (response, outcome, outcomeWithoutRetryAfter) {
-                case ("Stored", .delivered, .delivered), ("StoredNoStore", .delivered, .delivered),
+                case ("Stored", .delivered, .delivered),
                      ("Rejected", .rejected, .rejected),
                      // Without a valid `Retry-After`, events are retried with backoff.
                      ("Throttled", .throttled, .failed),
@@ -255,15 +223,11 @@ struct SpecConformanceTests {
         case emptyInfo
         case emptyName
         case missingSessionID
-        case unknownParameter
-        case parametersOutOfOrder
-        case unencodedCharacter
         case extraSessionField
         case numberInInfo
         case noEvents
-        case missingSentAtInBody
+        case missingSentAt
         case sentAtWithoutMilliseconds
-        case missingSentAtInQuery
     }
 
     @Test(arguments: Breakage.allCases)
@@ -274,37 +238,47 @@ struct SpecConformanceTests {
             os: "iOS", osVersion: "26.1.0", deviceModel: "iPhone17,1", locale: "en_GB"
         )
         let events = [EventRecord(.error("payment_declined", info: ["reason": "card_expired"]), timestamp: .now)]
-        let queryString = try RequestBuilder(configuration: DavyConfiguration(endpoint: endpoint, format: .queryString()))
-            .request(session: session, events: events, sentAt: .now)
         let batch = try RequestBuilder(configuration: DavyConfiguration(endpoint: endpoint))
             .request(session: session, events: events, sentAt: .now)
-        #expect(spec.violations(of: queryString).isEmpty)
         #expect(spec.violations(of: batch).isEmpty)
 
         let broken = switch breakage {
         case .lowercaseEventID:
-            try changingQueryItem("eventId", of: queryString) { $0.lowercased() }
+            try changingBody(of: batch) { payload in
+                var events = payload["events"] as? [[String: Any]] ?? []
+                events[0]["id"] = (events[0]["id"] as? String)?.lowercased()
+                payload["events"] = events
+            }
         case .timestampWithoutMilliseconds:
-            try changingQueryItem("timestamp", of: queryString) { _ in "2026-11-09T11%3A38%3A55Z" }
+            try changingBody(of: batch) { payload in
+                var events = payload["events"] as? [[String: Any]] ?? []
+                events[0]["timestamp"] = "2026-11-09T11:38:55Z"
+                payload["events"] = events
+            }
         case .unknownOS:
-            try changingQueryItem("os", of: queryString) { _ in "Windows" }
+            try changingBody(of: batch) { payload in
+                var session = payload["session"] as? [String: Any] ?? [:]
+                session["os"] = "Windows"
+                payload["session"] = session
+            }
         case .emptyInfo:
-            try changingQueryItem("info", of: queryString) { _ in "%7B%7D" }
+            try changingBody(of: batch) { payload in
+                var events = payload["events"] as? [[String: Any]] ?? []
+                events[0]["info"] = [:] as [String: String]
+                payload["events"] = events
+            }
         case .emptyName:
-            try {
-                let url = try #require(queryString.url)
-                var request = queryString
-                request.url = URL(string: url.absoluteString.replacing("/events/payment_declined", with: "/events/"))
-                return request
-            }()
+            try changingBody(of: batch) { payload in
+                var events = payload["events"] as? [[String: Any]] ?? []
+                events[0]["name"] = ""
+                payload["events"] = events
+            }
         case .missingSessionID:
-            try changingQuery(of: queryString) { $0.removeAll { $0.name == "sessionId" } }
-        case .unknownParameter:
-            try changingQuery(of: queryString) { $0.append((name: "deviceId", value: "123")) }
-        case .parametersOutOfOrder:
-            try changingQuery(of: queryString) { $0.swapAt(0, 1) }
-        case .unencodedCharacter:
-            try changingQueryItem("timestamp", of: queryString) { $0.removingPercentEncoding ?? $0 }
+            try changingBody(of: batch) { payload in
+                var session = payload["session"] as? [String: Any] ?? [:]
+                session["id"] = nil
+                payload["session"] = session
+            }
         case .extraSessionField:
             try changingBody(of: batch) { payload in
                 var session = payload["session"] as? [String: Any] ?? [:]
@@ -319,12 +293,10 @@ struct SpecConformanceTests {
             }
         case .noEvents:
             try changingBody(of: batch) { $0["events"] = [] }
-        case .missingSentAtInBody:
+        case .missingSentAt:
             try changingBody(of: batch) { $0["sentAt"] = nil }
         case .sentAtWithoutMilliseconds:
             try changingBody(of: batch) { $0["sentAt"] = "2026-11-09T11:39:00Z" }
-        case .missingSentAtInQuery:
-            try changingQuery(of: queryString) { $0.removeAll { $0.name == "sentAt" } }
         }
         #expect(!spec.violations(of: broken).isEmpty)
     }

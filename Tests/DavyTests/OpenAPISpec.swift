@@ -81,10 +81,6 @@ enum JSONValue: Equatable, Sendable, CustomStringConvertible {
 ///
 /// Anything in the spec this doesn't understand, such as a new schema keyword, is reported as a
 /// violation rather than skipped, so no part of the spec silently goes unchecked.
-///
-/// It also checks the rules the spec states in prose for query string requests: parameters are
-/// sent in the listed order with none unknown or repeated, and everything except
-/// `A–Z a–z 0–9 - . _ ~` is percent-encoded.
 struct OpenAPISpec {
     static let fileURL = URL(filePath: #filePath)
         .deletingLastPathComponent()
@@ -95,7 +91,6 @@ struct OpenAPISpec {
     /// Keywords that only describe a schema. In JSON Schema 2020-12, `format` is an annotation too,
     /// so the spec uses `pattern` for formats that must be checked.
     private static let annotations: Set<String> = ["description", "examples", "title", "format", "default", "deprecated", "$comment"]
-    private static let unreservedOrEscape = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~%")
     private static let methods = ["get", "put", "post", "delete", "options", "head", "patch", "trace"]
 
     let document: JSONValue
@@ -138,119 +133,14 @@ struct OpenAPISpec {
             return ["The URL isn't on the spec's server"]
         }
         let path = String(components.percentEncodedPath.dropFirst(serverComponents.percentEncodedPath.count))
-        guard let match = matchPath(path) else {
+        guard let pathItem = document["paths"]?[path] else {
             return ["No path in the spec matches \(path)"]
         }
-        guard let operation = match.item[method] else {
-            return ["\(match.template) has no \(method.uppercased()) operation"]
+        guard let operation = pathItem[method] else {
+            return ["\(path) has no \(method.uppercased()) operation"]
         }
-        return parameterViolations(of: components, pathValues: match.values, pathItem: match.item, operation: operation)
-            + bodyViolations(of: request, operation: operation)
-    }
-
-    /// The path item whose template matches `path`, preferring paths without templates, as
-    /// OpenAPI does, and the still percent-encoded values of its path parameters.
-    private func matchPath(_ path: String) -> (template: String, item: JSONValue, values: [String: String])? {
-        let segments = path.split(separator: "/", omittingEmptySubsequences: false)
-        let paths = (document["paths"]?.object ?? [:]).sorted {
-            ($0.key.contains("{") ? 1 : 0, $0.key) < ($1.key.contains("{") ? 1 : 0, $1.key)
-        }
-        for (template, item) in paths {
-            let templateSegments = template.split(separator: "/", omittingEmptySubsequences: false)
-            guard templateSegments.count == segments.count else { continue }
-            var values: [String: String] = [:]
-            let matches = zip(templateSegments, segments).allSatisfy { templateSegment, segment in
-                guard templateSegment.hasPrefix("{"), templateSegment.hasSuffix("}") else {
-                    return templateSegment == segment
-                }
-                values[String(templateSegment.dropFirst().dropLast())] = String(segment)
-                return true
-            }
-            if matches {
-                return (template, item, values)
-            }
-        }
-        return nil
-    }
-
-    private func parameterViolations(
-        of components: URLComponents,
-        pathValues: [String: String],
-        pathItem: JSONValue,
-        operation: JSONValue
-    ) -> [String] {
-        var violations: [String] = []
-        // Split by hand rather than with `queryItems`, so the encoding can be checked.
-        let queryItems = (components.percentEncodedQuery ?? "").split(separator: "&").map { queryItem in
-            let parts = queryItem.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
-            return (name: String(parts[0]).removingPercentEncoding ?? String(parts[0]), value: parts.count > 1 ? String(parts[1]) : "")
-        }
-        var specQueryNames: [String] = []
-
-        for reference in (pathItem["parameters"]?.array ?? []) + (operation["parameters"]?.array ?? []) {
-            guard let parameter = resolve(reference),
-                  let name = parameter["name"]?.string,
-                  let location = parameter["in"]?.string else {
-                violations.append("A parameter in the spec can't be resolved or has no name or location")
-                continue
-            }
-            let label = "The \(location) parameter \(name)"
-            let encoded: String
-            switch location {
-            case "path":
-                guard let value = pathValues[name] else {
-                    violations.append("\(label) isn't in the path template")
-                    continue
-                }
-                encoded = value
-            case "query":
-                specQueryNames.append(name)
-                let matching = queryItems.filter { $0.name == name }
-                if matching.count > 1 {
-                    violations.append("\(label) is sent \(matching.count) times")
-                }
-                guard let queryItem = matching.first else {
-                    if parameter["required"] == .bool(true) {
-                        violations.append("\(label) is required but missing")
-                    }
-                    continue
-                }
-                encoded = queryItem.value
-            default:
-                violations.append("\(label) isn't supported by OpenAPISpec, so add support for it")
-                continue
-            }
-
-            guard encoded.allSatisfy(Self.unreservedOrEscape.contains), let value = encoded.removingPercentEncoding else {
-                violations.append("\(label) isn't percent-encoded except for A–Z a–z 0–9 - . _ ~: \(encoded)")
-                continue
-            }
-            violations += valueViolations(value, of: parameter, label: label)
-        }
-
-        let sentNames = queryItems.map(\.name)
-        for name in sentNames where !specQueryNames.contains(name) {
-            violations.append("The query parameter \(name) isn't in the spec")
-        }
-        let sentOrder = sentNames.filter(specQueryNames.contains)
-        let specOrder = specQueryNames.filter(sentNames.contains)
-        if sentOrder != specOrder {
-            violations.append("Query parameters are sent in the order \(sentOrder), not \(specOrder)")
-        }
-        return violations
-    }
-
-    private func valueViolations(_ value: String, of parameter: JSONValue, label: String) -> [String] {
-        if let schema = parameter["schema"] {
-            return schemaViolations(of: .string(value), against: schema, at: label)
-        }
-        guard let content = parameter["content"]?.object, content.count == 1, let schema = content["application/json"]?["schema"] else {
-            return ["\(label) has neither a schema nor only JSON content, which OpenAPISpec doesn't support"]
-        }
-        guard let json = try? JSONValue(JSONSerialization.jsonObject(with: Data(value.utf8), options: .fragmentsAllowed)) else {
-            return ["\(label) isn't valid JSON: \(value)"]
-        }
-        return schemaViolations(of: json, against: schema, at: label)
+        let queryViolations = components.percentEncodedQuery == nil ? [] : ["The request has a query string, which the spec doesn't allow"]
+        return queryViolations + bodyViolations(of: request, operation: operation)
     }
 
     private func bodyViolations(of request: URLRequest, operation: JSONValue) -> [String] {
