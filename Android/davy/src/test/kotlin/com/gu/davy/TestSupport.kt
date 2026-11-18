@@ -109,6 +109,7 @@ internal fun makeDavy(
     batchSize: Int = 100,
     debounceInterval: Duration = 60.seconds,
     debugHistoryLimit: Int = 200,
+    sendsEvents: Boolean = true,
     lifecycle: LifecycleSource? = null,
     session: Session = testSession(environment, info),
 ): Davy = Davy(
@@ -124,6 +125,7 @@ internal fun makeDavy(
         debounceInterval = debounceInterval,
         storageDirectory = directory,
         debugHistoryLimit = debugHistoryLimit,
+        sendsEvents = sendsEvents,
     ),
     session = session,
     storageDirectory = directory,

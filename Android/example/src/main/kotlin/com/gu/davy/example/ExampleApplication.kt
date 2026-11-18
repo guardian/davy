@@ -59,5 +59,8 @@ class ExampleApplication : Application() {
         maxEventAge = 7.days,
         storageDirectory = Davy.defaultStorageDirectory(this),
         allowsInsecureHttp = BuildConfig.DEBUG,
+        // Send events from launch (the default). Set to false to only store them until `start()`
+        // is called, and call `start()` / `stop()` from remote config as a kill switch.
+        sendsEvents = true,
     )
 }

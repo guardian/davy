@@ -65,6 +65,9 @@ internal class EventPipeline(
 
     /** When a server-requested pause ends, in milliseconds since 1970. */
     private var pausedUntil: Long? = null
+
+    /** Whether events are sent. When `false`, events are still stored but no requests are made. */
+    private var isSendingEnabled = configuration.sendsEvents
     private val flushCompletions = mutableListOf<() -> Unit>()
 
     /** Events the server responded to, oldest first, up to the debug history limit. */
@@ -127,6 +130,22 @@ internal class EventPipeline(
         if (!submitted) onComplete?.invoke()
     }
 
+    /** Turns sending on or off. Events are stored either way. */
+    fun setSendingEnabled(enabled: Boolean) {
+        submit {
+            if (enabled == isSendingEnabled) return@submit
+            isSendingEnabled = enabled
+            if (enabled) {
+                Log.i(TAG, "Sending started")
+                if (store.count > 0) requestSend(force = false)
+            } else {
+                Log.i(TAG, "Sending stopped; events will be stored but not sent")
+                debounce?.cancel(false)
+                debounce = null
+            }
+        }
+    }
+
     /** Stops sending. Pending events stay on disk for the next launch. */
     fun close() {
         submit {
@@ -175,7 +194,11 @@ internal class EventPipeline(
         recordActivity(logged = 1, atMillis = storedRecord.timestampMillis)
         recordSessionEvent(session.id, storedRecord.timestampMillis)
         debugStateDidChange()
-        if (store.count >= batchSize) requestSend(force = false) else scheduleDebouncedSend()
+        if (store.count >= batchSize) {
+            requestSend(force = false)
+        } else if (isSendingEnabled) {
+            scheduleDebouncedSend()
+        }
     }
 
     /**
@@ -210,12 +233,13 @@ internal class EventPipeline(
     }
 
     /**
-     * Starts draining pending events unless a drain is already running or the server asked for a
-     * pause. [force] skips any retry backoff currently in effect.
+     * Starts draining pending events unless sending is stopped, a drain is already running, or the
+     * server asked for a pause. [force] skips any retry backoff currently in effect.
      */
     private fun requestSend(force: Boolean) {
         debounce?.cancel(false)
         debounce = null
+        if (!isSendingEnabled) return
         // A server-requested pause is honored even when flushing; it ends by itself.
         if (pausedUntil != null) return
         if (force) {
@@ -229,9 +253,12 @@ internal class EventPipeline(
         sendNext()
     }
 
-    /** Sends the next pending delivery, or finishes the drain if none remain or sending is paused. */
+    /**
+     * Sends the next pending delivery, or finishes the drain if none remain, or sending is stopped
+     * or paused. Checked before each request, so stopping takes effect after the one in flight.
+     */
     private fun sendNext() {
-        val delivery = if (pausedUntil == null) nextDelivery() else null
+        val delivery = if (isSendingEnabled && pausedUntil == null) nextDelivery() else null
         if (delivery == null) {
             finishDrain(failed = false)
             return

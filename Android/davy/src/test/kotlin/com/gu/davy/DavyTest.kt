@@ -199,6 +199,41 @@ class DavyTest {
     }
 
     @Test
+    fun eventsAreStoredButNotSentUntilStartedWhenConfiguredOff() {
+        val transport = MockTransport()
+        val telemetry = makeDavy(directory(), transport, batchSize = 1, sendsEvents = false).tracked()
+
+        telemetry.log(Event.Breadcrumb("event_0"))
+        telemetry.log(Event.Breadcrumb("event_1"))
+        telemetry.flushAndWaitBlocking()
+        assertEquals(0, transport.attempts)
+        assertEquals(listOf("event_0", "event_1"), telemetry.debugSnapshotBlocking().pending.map { it.name })
+
+        telemetry.start()
+        assertTrue(waitUntil { transport.sentNames == listOf("event_0", "event_1") })
+        assertTrue(telemetry.debugSnapshotBlocking().pending.isEmpty())
+    }
+
+    @Test
+    fun stoppingKeepsEventsUntilStartedAgain() {
+        val transport = MockTransport()
+        val telemetry = makeDavy(directory(), transport, batchSize = 1).tracked()
+
+        telemetry.log(Event.Breadcrumb("before_stop"))
+        telemetry.flushAndWaitBlocking()
+        assertEquals(listOf("before_stop"), transport.sentNames)
+
+        telemetry.stop()
+        telemetry.log(Event.Breadcrumb("while_stopped"))
+        telemetry.flushAndWaitBlocking()
+        assertEquals(1, transport.attempts)
+        assertEquals(listOf("while_stopped"), telemetry.debugSnapshotBlocking().pending.map { it.name })
+
+        telemetry.start()
+        assertTrue(waitUntil { transport.sentNames == listOf("before_stop", "while_stopped") })
+    }
+
+    @Test
     fun debounceSendsPartialBatchAfterQuietPeriod() {
         val transport = MockTransport()
         val telemetry = makeDavy(directory(), transport, debounceInterval = 100.milliseconds).tracked()

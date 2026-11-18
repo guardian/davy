@@ -59,6 +59,8 @@ actor EventPipeline {
         case removeDebugObserver(UUID)
         /// Forgets the events recorded as sent.
         case clearDebugHistory
+        /// Turns sending on or off. Events are stored either way.
+        case setSendingEnabled(Bool)
     }
 
     /// Pending events to send in one request, all from the same session.
@@ -85,6 +87,8 @@ actor EventPipeline {
     private var consecutiveFailures = 0
     /// When a server-requested pause ends.
     private var pausedUntil: Date?
+    /// Whether events are sent. When `false`, events are still stored but no requests are made.
+    private var isSendingEnabled: Bool
 
     /// Events the server responded to, oldest first, up to
     /// ``DavyConfiguration/debugHistoryLimit``.
@@ -119,6 +123,7 @@ actor EventPipeline {
         self.requestBuilder = RequestBuilder(configuration: configuration)
         self.transport = transport
         self.retryPolicy = retryPolicy
+        self.isSendingEnabled = configuration.sendsEvents
         self.pauseFile = configuration.storageDirectory.appending(
             path: "paused-until-\(RequestBuilder.destination(for: configuration.endpoint))", directoryHint: .notDirectory
         )
@@ -177,6 +182,19 @@ actor EventPipeline {
             sentHistory.removeAll()
             requestHistory.removeAll()
             debugStateDidChange()
+        case let .setSendingEnabled(enabled):
+            guard enabled != isSendingEnabled else { return }
+            isSendingEnabled = enabled
+            if enabled {
+                logger.info("Sending started")
+                if store.count > 0 {
+                    requestSend(force: false)
+                }
+            } else {
+                logger.info("Sending stopped; events will be stored but not sent")
+                debounceTask?.cancel()
+                debounceTask = nil
+            }
         }
     }
 
@@ -196,7 +214,7 @@ actor EventPipeline {
 
         if store.count >= batchSize {
             requestSend(force: false)
-        } else {
+        } else if isSendingEnabled {
             scheduleDebouncedSend()
         }
     }
@@ -240,13 +258,14 @@ actor EventPipeline {
         }
     }
 
-    /// Starts draining pending events unless a send is already running or the server asked for a
-    /// pause.
+    /// Starts draining pending events unless sending is stopped, a send is already running, or
+    /// the server asked for a pause.
     ///
     /// - Parameter force: Skips any retry backoff currently in effect.
     private func requestSend(force: Bool) {
         debounceTask?.cancel()
         debounceTask = nil
+        guard isSendingEnabled else { return }
         // A server-requested pause is honored even when flushing; it ends by itself.
         guard pausedUntil == nil else { return }
         if force {
@@ -264,7 +283,8 @@ actor EventPipeline {
         pruneExpiredEvents()
 
         var failed = false
-        while !failed, pausedUntil == nil, let delivery = nextDelivery() {
+        // Checked before each request so stopping takes effect after the request in flight.
+        while !failed, isSendingEnabled, pausedUntil == nil, let delivery = nextDelivery() {
             let (outcome, request) = await Self.send(delivery, via: transport, requestBuilder: requestBuilder)
             if let request {
                 recordRequest(request)

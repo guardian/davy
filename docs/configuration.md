@@ -16,6 +16,7 @@ Only `endpoint` is required. The options have the same names on every platform; 
 | `debounceInterval` | 10 seconds | How long to wait after the most recent event before sending a partial batch |
 | `maxEventAge` | 30 days | How old unsent events can get before they're discarded |
 | `storageDirectory` | A platform default | Where pending events are stored; see [iOS and macOS](setup-apple.md#how-it-behaves-on-apple-platforms) and [Android](setup-android.md#how-it-behaves-on-android). Use a separate directory for each instance |
+| `sendsEvents` | `true` | Whether events are sent from launch. When `false`, events are still logged, stored, and shown on the debug screen, but nothing is sent until `start()` is called; see [Turning sending off](delivery.md#turning-sending-off) |
 | `debugHistoryLimit` | `200` | How many sent events, and how many requests, to keep in memory for the debug screen and snapshots; `0` keeps none; see [Debugging events](debugging.md) |
 
 ## A full configuration
@@ -36,7 +37,8 @@ let telemetry = Davy(configuration: DavyConfiguration(
     debounceInterval: .seconds(5),
     maxEventAge: .seconds(7 * 24 * 60 * 60),
     storageDirectory: DavyConfiguration.defaultStorageDirectory,
-    debugHistoryLimit: 200
+    debugHistoryLimit: 200,
+    sendsEvents: true
 ))
 ```
 
@@ -55,6 +57,7 @@ val telemetry = Davy(context, DavyConfiguration(
     maxEventAge = 7.days,
     storageDirectory = Davy.defaultStorageDirectory(context),
     debugHistoryLimit = 200,
+    sendsEvents = true,
 ))
 ```
 

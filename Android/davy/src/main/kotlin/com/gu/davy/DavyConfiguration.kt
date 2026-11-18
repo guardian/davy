@@ -47,6 +47,10 @@ import kotlin.time.Duration.Companion.seconds
  *   keeps none. The history isn't stored on disk, so it starts empty each time an instance is
  *   created. Each request is kept with its body, so lower this if memory is tight.
  * @property allowsInsecureHttp Allows plain HTTP for development. Defaults to `false`.
+ * @property sendsEvents Whether events are sent to [endpoint] when the instance is created. When
+ *   `false`, events are still logged, stored on disk, and shown in [DavyDebugActivity], but nothing
+ *   is sent until [Davy.start] is called. Use it with [Davy.start] and [Davy.stop] as a kill
+ *   switch, for example driven by remote config. Defaults to `true`.
  */
 public data class DavyConfiguration(
     val endpoint: URI,
@@ -62,6 +66,7 @@ public data class DavyConfiguration(
     val storageDirectory: File? = null,
     val debugHistoryLimit: Int = 200,
     val allowsInsecureHttp: Boolean = false,
+    val sendsEvents: Boolean = true,
 )
 
 /**

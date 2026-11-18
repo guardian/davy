@@ -12,7 +12,20 @@ Delivery works the same way on every platform.
 - On launch, for any events left over from a previous session.
 - When `flush()` or `flushAndWait()` is called.
 
+None of these send anything while sending is stopped; see [Turning sending off](#turning-sending-off).
+
 The debounce timer restarts with every event, so in a busy session events can wait until `batchSize` are pending or the app moves to the background. Lower `debounceInterval` and `batchSize` if you need events sooner; with a `batchSize` of 1, each event is sent as soon as it's logged.
+
+## Turning sending off
+
+`stop()` and `start()` work as a kill switch, for example driven by remote config. Set `sendsEvents` to `false` to create an instance that starts stopped.
+
+```swift
+telemetry.stop()   // Events are still logged and stored, but not sent
+telemetry.start()  // Sends everything stored while stopped, then carries on as normal
+```
+
+While stopped, events are still written to disk and shown on the debug screen, and `flush()` and `flushAndWait()` return without sending. A request already in flight when `stop()` is called finishes, but no more are made. Events stored while stopped are discarded if they're older than `maxEventAge` by the time sending starts. Whether sending is stopped isn't remembered across launches, so set `sendsEvents` from your remote config's cached value each launch.
 
 ## Delivery guarantees
 

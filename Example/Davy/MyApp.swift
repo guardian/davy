@@ -78,5 +78,8 @@ private let DavyConfig = DavyConfiguration(
     // Keep the 200 most recently sent events in memory for the "Debug Events" screen (the
     // default). 0 keeps none.
     debugHistoryLimit: 200,
-    allowsInsecureHTTP: allowsInsecureHTTP
+    allowsInsecureHTTP: allowsInsecureHTTP,
+    // Send events from launch (the default). Set to false to only store them until `start()` is
+    // called, and call `start()` / `stop()` from remote config as a kill switch.
+    sendsEvents: true
 )

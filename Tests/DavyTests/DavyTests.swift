@@ -110,6 +110,7 @@ private func makeDavy(
     batchSize: Int = 100,
     debounceInterval: Duration = .seconds(60),
     debugHistoryLimit: Int = 200,
+    sendsEvents: Bool = true,
     notificationCenter: NotificationCenter? = nil
 ) -> Davy {
     Davy(
@@ -124,7 +125,8 @@ private func makeDavy(
             batchSize: batchSize,
             debounceInterval: debounceInterval,
             storageDirectory: directory,
-            debugHistoryLimit: debugHistoryLimit
+            debugHistoryLimit: debugHistoryLimit,
+            sendsEvents: sendsEvents
         ),
         transport: transport,
         retryPolicy: RetryPolicy(initialDelay: .seconds(60), maxDelay: .seconds(60)),
@@ -304,6 +306,64 @@ struct DavyTests {
         #expect(payloads.map(\.session.id) == [firstSessionID, relaunched.sessionID])
         #expect(payloads.map { $0.events.map(\.name) } == [["event-0", "event-1"], ["event-2"]])
         #expect(payloads.map { $0.events.map(\.type) } == [["breadcrumb", "error"], ["breadcrumb"]])
+    }
+
+    @Test func eventsAreStoredButNotSentUntilStartedWhenConfiguredOff() async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transport = MockTransport()
+        let telemetry = makeDavy(directory: directory, transport: transport, batchSize: 1, sendsEvents: false)
+
+        telemetry.log(.breadcrumb("event_0"))
+        telemetry.log(.breadcrumb("event_1"))
+        await telemetry.flushAndWait()
+        #expect(await transport.attempts == 0)
+        #expect(await telemetry.debugSnapshot().pending.map(\.name) == ["event_0", "event_1"])
+
+        telemetry.start()
+        #expect(await waitUntil { await transport.sentNames == ["event_0", "event_1"] })
+        #expect(await telemetry.debugSnapshot().pending.isEmpty)
+    }
+
+    @Test func stoppingKeepsEventsUntilStartedAgain() async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transport = MockTransport()
+        let telemetry = makeDavy(directory: directory, transport: transport, batchSize: 1)
+
+        telemetry.log(.breadcrumb("before_stop"))
+        await telemetry.flushAndWait()
+        #expect(await transport.sentNames == ["before_stop"])
+
+        telemetry.stop()
+        telemetry.log(.breadcrumb("while_stopped"))
+        await telemetry.flushAndWait()
+        #expect(await transport.attempts == 1)
+        #expect(await telemetry.debugSnapshot().pending.map(\.name) == ["while_stopped"])
+
+        telemetry.start()
+        #expect(await waitUntil { await transport.sentNames == ["before_stop", "while_stopped"] })
+    }
+
+    @Test func leftoverEventsAreNotSentOnLaunchWhileStopped() async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transport = MockTransport()
+        await transport.setFailing(true)
+        do {
+            let first = makeDavy(directory: directory, transport: transport)
+            first.log(.breadcrumb("leftover"))
+            await first.flushAndWait()
+        }
+        await transport.setFailing(false)
+        let attemptsBeforeRelaunch = await transport.attempts
+
+        let relaunched = makeDavy(directory: directory, transport: transport, sendsEvents: false)
+        await relaunched.flushAndWait()
+        #expect(await transport.attempts == attemptsBeforeRelaunch)
+
+        relaunched.start()
+        #expect(await waitUntil { await transport.sentNames == ["leftover"] })
     }
 
     @Test func reachingBatchSizeSendsWithoutWaitingForDebounce() async throws {

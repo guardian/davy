@@ -46,7 +46,7 @@ public final class Davy: Sendable {
     private let logger = Logger(subsystem: "Davy", category: "Davy")
 
     /// Creates an instance with a new session and starts sending any events left over from a
-    /// previous session.
+    /// previous session, unless ``DavyConfiguration/sendsEvents`` is `false`.
     public convenience init(configuration: DavyConfiguration) {
         self.init(configuration: configuration, transport: URLSessionTransport(allowsInsecureHTTP: configuration.allowsInsecureHTTP))
     }
@@ -182,9 +182,28 @@ public final class Davy: Sendable {
     }
 
     /// Sends all pending events now, bypassing the debounce interval and any retry backoff, but not
-    /// a pause the server asked for with `Retry-After`.
+    /// a pause the server asked for with `Retry-After`. Does nothing while sending is stopped.
     public func flush() {
         commands.yield(.flush(nil))
+    }
+
+    /// Starts sending events, including any logged while sending was stopped.
+    ///
+    /// Use it with ``stop()`` and ``DavyConfiguration/sendsEvents`` as a kill switch, for example
+    /// driven by remote config. Calling it while already sending does nothing. Any retry backoff or
+    /// server-requested pause still in effect is respected.
+    public func start() {
+        commands.yield(.setSendingEnabled(true))
+    }
+
+    /// Stops sending events. Events are still logged, stored on disk, and shown in
+    /// ``DavyDebugView``, and are sent once ``start()`` is called, unless they're older than
+    /// ``DavyConfiguration/maxEventAge`` by then.
+    ///
+    /// A request already in flight finishes, but no more are made. Calling it while already
+    /// stopped does nothing.
+    public func stop() {
+        commands.yield(.setSendingEnabled(false))
     }
 
     /// Sends all pending events now, like ``flush()``, and waits for the attempt to finish.
@@ -199,8 +218,8 @@ public final class Davy: Sendable {
     /// ```
     ///
     /// Returns once the server has responded to every pending event, or sending stops because of
-    /// an error or a pause the server asked for with `Retry-After`. Events that weren't delivered
-    /// stay on disk and are sent later.
+    /// an error, a pause the server asked for with `Retry-After`, or ``stop()``. Events that weren't
+    /// delivered stay on disk and are sent later.
     public func flushAndWait() async {
         await Self.flush(commands)
     }

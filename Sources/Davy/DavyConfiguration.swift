@@ -77,6 +77,13 @@ public struct DavyConfiguration: Sendable {
     /// request is kept with its body, so lower this if memory is tight.
     public var debugHistoryLimit: Int
 
+    /// Whether events are sent to ``endpoint`` when the instance is created.
+    ///
+    /// When `false`, events are still logged and stored on disk, and shown in ``DavyDebugView``,
+    /// but nothing is sent until ``Davy/start()`` is called. Use it with ``Davy/start()`` and
+    /// ``Davy/stop()`` as a kill switch, for example driven by remote config.
+    public var sendsEvents: Bool
+
     /// Creates a configuration.
     ///
     /// - Parameters:
@@ -96,6 +103,7 @@ public struct DavyConfiguration: Sendable {
     ///   - storageDirectory: Where events are persisted. Defaults to ``defaultStorageDirectory``.
     ///   - debugHistoryLimit: How many sent events and requests to keep in memory for debugging. Defaults to 200.
     ///   - allowsInsecureHTTP: Whether to allow plain HTTP for development. Defaults to `false`.
+    ///   - sendsEvents: Whether events are sent when the instance is created. Defaults to `true`.
     public init(
         endpoint: URL,
         environment: String? = nil,
@@ -109,7 +117,8 @@ public struct DavyConfiguration: Sendable {
         maxEventAge: Duration = .seconds(30 * 24 * 60 * 60),
         storageDirectory: URL = DavyConfiguration.defaultStorageDirectory,
         debugHistoryLimit: Int = 200,
-        allowsInsecureHTTP: Bool = false
+        allowsInsecureHTTP: Bool = false,
+        sendsEvents: Bool = true
     ) {
         self.endpoint = endpoint
         self.allowsInsecureHTTP = allowsInsecureHTTP
@@ -124,6 +133,7 @@ public struct DavyConfiguration: Sendable {
         self.maxEventAge = maxEventAge
         self.storageDirectory = storageDirectory
         self.debugHistoryLimit = debugHistoryLimit
+        self.sendsEvents = sendsEvents
     }
 
     /// `Application Support/<bundle identifier>/Davy`.
