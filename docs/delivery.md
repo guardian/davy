@@ -1,5 +1,7 @@
 # How delivery works
 
+Queued events are tied to the exact endpoint URL they were logged for. If you reuse the storage directory with a different endpoint, Davy discards events for the old URL rather than sending them to the new one. Pending events written by older versions without an endpoint binding are also discarded. Redirects are treated as failed delivery attempts, so configure the final URL directly.
+
 Delivery works the same way on every platform.
 
 ## When events are sent

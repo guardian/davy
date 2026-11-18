@@ -66,7 +66,7 @@ Or use `DavyDebugActivity.intent(context, telemetry)` to start it some other way
 - **Stopping.** `close()` stops an instance, for example at the end of a test. Its pending events stay on disk.
 - **Invalid names.** With `onInvalidEventName = InvalidEventNameAction.CRASH`, `log` throws an `IllegalArgumentException`.
 - **Exceptions.** `log(exception, name)` records the exception's class name under `error_type`. In builds minified with R8, your own exception classes are renamed unless you keep their names.
-- **Cookies.** Requests use `HttpURLConnection`, which sends and stores cookies only if your app installs a default `java.net.CookieHandler`.
+- **Cookies.** Davy uses a separate OkHttp client with cookies disabled. It does not use a process-wide `java.net.CookieHandler`.
 - **Session data.** `appVersion` and `build` are the app's `versionName` and `versionCode`. `os` is `Android`, `osVersion` is padded to three parts, such as `15.0.0`, and `deviceModel` is the model name, such as `Pixel 9`.
 - **Diagnostics.** Errors' diagnostics use the same keys as on Apple platforms with Android's values. See [Diagnostics](backend.md#diagnostics).
 

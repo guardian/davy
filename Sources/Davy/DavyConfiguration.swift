@@ -5,6 +5,9 @@ public struct DavyConfiguration: Sendable {
     /// The URL that events are sent to.
     public var endpoint: URL
 
+    /// Allows plain HTTP for development. Leave disabled for production.
+    public var allowsInsecureHTTP: Bool
+
     /// The kind of build sending events, for example `"debug"`, `"beta"`, or `"production"`, sent as
     /// the request's `session.environment`. Omitted when `nil`.
     ///
@@ -46,7 +49,7 @@ public struct DavyConfiguration: Sendable {
     public var logsAppLifecycleEvents: Bool
 
     /// Additional HTTP header fields sent with every request, for example an `Authorization` header.
-    /// `Content-Type`, `User-Agent`, and `Accept-Language` are always set by Davy.
+    /// `Content-Type`, `User-Agent`, and `Accept-Language` are always set by Davy. Cookie headers are ignored.
     public var headers: [String: String]
 
     /// The number of pending events that triggers an immediate send, and the maximum number of
@@ -92,6 +95,7 @@ public struct DavyConfiguration: Sendable {
     ///   - maxEventAge: How long unsent events are kept. Defaults to 30 days.
     ///   - storageDirectory: Where events are persisted. Defaults to ``defaultStorageDirectory``.
     ///   - debugHistoryLimit: How many sent events and requests to keep in memory for debugging. Defaults to 200.
+    ///   - allowsInsecureHTTP: Whether to allow plain HTTP for development. Defaults to `false`.
     public init(
         endpoint: URL,
         environment: String? = nil,
@@ -104,9 +108,11 @@ public struct DavyConfiguration: Sendable {
         debounceInterval: Duration = .seconds(10),
         maxEventAge: Duration = .seconds(30 * 24 * 60 * 60),
         storageDirectory: URL = DavyConfiguration.defaultStorageDirectory,
-        debugHistoryLimit: Int = 200
+        debugHistoryLimit: Int = 200,
+        allowsInsecureHTTP: Bool = false
     ) {
         self.endpoint = endpoint
+        self.allowsInsecureHTTP = allowsInsecureHTTP
         self.environment = environment
         self.info = info
         self.onInvalidEventName = onInvalidEventName

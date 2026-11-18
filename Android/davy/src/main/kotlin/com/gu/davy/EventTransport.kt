@@ -1,8 +1,12 @@
 package com.gu.davy
 
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
+import java.util.concurrent.TimeUnit
+import okhttp3.Authenticator
+import okhttp3.CookieJar
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 
 /** A response's status code and header fields. */
 internal class HttpResponse(
@@ -36,37 +40,35 @@ internal fun EventTransport.deliver(request: HttpRequest): DeliveryResult = try 
     DeliveryResult(null, DeliveryOutcome.Failed(exception.toString()))
 }
 
-/**
- * Sends requests with [HttpURLConnection], never answering them from a cache.
- *
- * Cookies are sent and stored only if the app installs a default `java.net.CookieHandler`, which
- * apps don't by default.
- */
-internal class HttpUrlConnectionTransport(private val timeoutMillis: Int = 60_000) : EventTransport {
+/** Uses its own HTTP client rather than the host application's process-wide cookies or credentials. */
+internal class OkHttpTransport(
+    private val allowsInsecureHttp: Boolean = false,
+) : EventTransport {
     override fun send(request: HttpRequest): HttpResponse {
-        val connection = URL(request.url).openConnection() as HttpURLConnection
-        try {
-            connection.requestMethod = "POST"
-            connection.useCaches = false
-            connection.connectTimeout = timeoutMillis
-            connection.readTimeout = timeoutMillis
-            for ((field, value) in request.headers) {
-                connection.setRequestProperty(field, value)
-            }
-            connection.doOutput = true
-            connection.setFixedLengthStreamingMode(request.body.size)
-            connection.outputStream.use { it.write(request.body) }
-            val statusCode = connection.responseCode
-            // The body is ignored, but reading it lets the connection be reused.
-            val stream = if (statusCode >= 400) connection.errorStream else connection.inputStream
-            stream?.use { it.readBytes() }
-            val headers = connection.headerFields.orEmpty()
-                .filterKeys { it != null }
-                .mapNotNull { (field, values) -> values.lastOrNull()?.let { field to it } }
-                .toMap()
-            return HttpResponse(statusCode, headers)
-        } finally {
-            connection.disconnect()
+        val builder = Request.Builder().url(request.url)
+        for ((field, value) in request.headers) {
+            builder.header(field, value)
         }
+        val post = builder.post(request.body.toRequestBody()).build()
+        if (!post.url.isHttps && !allowsInsecureHttp) {
+            throw IOException("The telemetry endpoint must use HTTPS")
+        }
+        return client.newCall(post).execute().use { response ->
+            HttpResponse(response.code, response.headers.names().associateWith { response.headers[it].orEmpty() })
+        }
+    }
+
+    private companion object {
+        val client = OkHttpClient.Builder()
+            .cookieJar(CookieJar.NO_COOKIES)
+            .authenticator(Authenticator.NONE)
+            .proxyAuthenticator(Authenticator.NONE)
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .retryOnConnectionFailure(false)
+            .connectTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .build()
     }
 }

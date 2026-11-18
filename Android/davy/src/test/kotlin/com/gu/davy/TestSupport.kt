@@ -147,6 +147,8 @@ internal fun runSuspending(block: suspend () -> Unit) {
     failure?.let { throw it }
 }
 
+internal val testDestination = RequestBuilder(DavyConfiguration(java.net.URI("https://example.com/events"))).destination
+
 internal fun Davy.flushAndWaitBlocking() = runSuspending { flushAndWait() }
 
 internal fun Davy.debugSnapshotBlocking(): DavyDebugSnapshot {

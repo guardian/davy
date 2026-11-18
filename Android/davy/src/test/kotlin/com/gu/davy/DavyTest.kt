@@ -229,7 +229,7 @@ class DavyTest {
         val session = testSession()
         val now = System.currentTimeMillis()
         for ((name, loggedAt) in listOf("expired" to now - 31.days.inWholeMilliseconds, "recent" to now - 29.days.inWholeMilliseconds)) {
-            val pending = DavyJson.pendingEvent(session, EventRecord.from(Event.Breadcrumb(name), loggedAt))
+            val pending = DavyJson.pendingEvent(session, EventRecord.from(Event.Breadcrumb(name), loggedAt), testDestination)
             store.append(pending.toByteArray(), loggedAt)
         }
 
@@ -238,6 +238,28 @@ class DavyTest {
         telemetry.flushAndWaitBlocking()
 
         assertEquals(listOf("recent"), transport.sentNames)
+        assertEquals(0, FileEventStore(eventsDirectory).count)
+    }
+
+    @Test
+    fun onlyEventsBoundToTheCurrentEndpointAreSent() {
+        val directory = directory()
+        val eventsDirectory = File(directory, "events")
+        val store = FileEventStore(eventsDirectory)
+        val session = testSession()
+        val loggedAt = System.currentTimeMillis() - 60_000
+        val oldDestination = RequestBuilder(DavyConfiguration(URI("https://example.com/old"))).destination
+        val old = DavyJson.pendingEvent(session, EventRecord.from(Event.Breadcrumb("old"), loggedAt), oldDestination)
+        val legacy = DavyJson.prettyPendingEvent(session, EventRecord.from(Event.Breadcrumb("legacy"), loggedAt))
+        store.append(old.toByteArray(), loggedAt)
+        store.append(legacy.toByteArray(), loggedAt)
+
+        val transport = MockTransport()
+        val telemetry = makeDavy(directory, transport, batchSize = 1).tracked()
+        telemetry.log(Event.Breadcrumb("current"))
+        telemetry.flushAndWaitBlocking()
+
+        assertEquals(listOf("current"), transport.sentNames)
         assertEquals(0, FileEventStore(eventsDirectory).count)
     }
 

@@ -34,6 +34,7 @@ kotlin {
 }
 
 dependencies {
+    implementation(libs.okhttp)
     testImplementation(libs.junit)
     // Android's org.json is a stub in local unit tests, so use the real one.
     testImplementation(libs.json)

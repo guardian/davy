@@ -80,7 +80,12 @@ class DeviceTest {
         val directory = File(context.cacheDir, "DeviceTest-${UUID.randomUUID()}")
         val telemetry = Davy(
             context,
-            DavyConfiguration(endpoint = URI("http://127.0.0.1:${server.localPort}/events"), environment = "test", storageDirectory = directory),
+            DavyConfiguration(
+                endpoint = URI("http://127.0.0.1:${server.localPort}/events"),
+                environment = "test",
+                storageDirectory = directory,
+                allowsInsecureHttp = true,
+            ),
         )
 
         try {

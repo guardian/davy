@@ -24,7 +24,7 @@ Davy is built for big-picture reporting: how often something happens, which erro
 - **Privacy-minded.** No user, device, or advertising identifiers, and a new random session ID every launch.
 - **The same requests on every platform.** Both clients are tested against one [OpenAPI spec](Spec/openapi.yaml) and shared [fixtures](Spec/fixtures.json), so you can query events from every platform together.
 - **A debug screen** that lists pending and sent events, and the requests they were sent in, during development.
-- **No dependencies.**
+- **Small footprint.** No runtime dependencies on Apple platforms; Android uses OkHttp to keep telemetry separate from the host app's cookies.
 
 ## Getting started
 

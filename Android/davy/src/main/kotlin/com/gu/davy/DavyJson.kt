@@ -14,7 +14,7 @@ import java.util.UUID
 /**
  * The fixed JSON encoding used for requests and storage, so every client sends the same shape.
  *
- * Written by hand rather than with a library so the library has no dependencies, and so the output
+ * Written by hand rather than with a library to avoid an extra dependency, and so the output
  * is exactly what the spec describes. Reading uses Android's built-in `org.json`.
  */
 internal object DavyJson {
@@ -51,20 +51,22 @@ internal object DavyJson {
 
     /**
      * An event as stored on disk, with the session it was logged in, so events left over from a
-     * previous launch are still sent with their original session: `{ "session": { … }, "event": { … } }`.
+     * previous launch are still sent with their original session and only to their original destination.
      */
-    fun pendingEvent(session: Session, event: EventRecord): String = buildString {
+    fun pendingEvent(session: Session, event: EventRecord, destination: String): String = buildString {
         append("{\"session\":")
         appendSession(session)
         append(",\"event\":")
         appendEvent(event)
+        append(",\"destination\":")
+        appendString(destination)
         append('}')
     }
 
     /** Reads a [pendingEvent], or returns `null` if [json] isn't one. */
-    fun parsePendingEvent(json: String): Pair<Session, EventRecord>? = try {
+    fun parsePendingEvent(json: String): Triple<Session, EventRecord, String?>? = try {
         val pending = JSONObject(json)
-        parseSession(pending.getJSONObject("session")) to parseEvent(pending.getJSONObject("event"))
+        Triple(parseSession(pending.getJSONObject("session")), parseEvent(pending.getJSONObject("event")), pending.stringOrNull("destination"))
     } catch (_: JSONException) {
         null
     } catch (_: IllegalArgumentException) {

@@ -1,6 +1,7 @@
 package com.gu.davy
 
 import java.net.URI
+import java.security.MessageDigest
 
 /** A `POST` request ready to be sent by an [EventTransport]. */
 internal class HttpRequest(
@@ -12,6 +13,9 @@ internal class HttpRequest(
 /** Builds the HTTP request that delivers events to the configured endpoint. */
 internal class RequestBuilder(configuration: DavyConfiguration) {
     val endpoint: URI = configuration.endpoint
+    val destination: String = MessageDigest.getInstance("SHA-256")
+        .digest(endpoint.toString().toByteArray())
+        .joinToString("") { "%02x".format(it) }
     private val headers: Map<String, String> = configuration.headers
 
     /**
@@ -24,7 +28,9 @@ internal class RequestBuilder(configuration: DavyConfiguration) {
             for ((field, value) in headers) {
                 if (!field.equals("Content-Type", ignoreCase = true) &&
                     !field.equals("User-Agent", ignoreCase = true) &&
-                    !field.equals("Accept-Language", ignoreCase = true)
+                    !field.equals("Accept-Language", ignoreCase = true) &&
+                    !field.equals("Cookie", ignoreCase = true) &&
+                    !field.equals("Cookie2", ignoreCase = true)
                 ) {
                     put(field, value)
                 }

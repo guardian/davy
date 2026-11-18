@@ -48,7 +48,7 @@ public final class Davy: Sendable {
     /// Creates an instance with a new session and starts sending any events left over from a
     /// previous session.
     public convenience init(configuration: DavyConfiguration) {
-        self.init(configuration: configuration, transport: URLSessionTransport())
+        self.init(configuration: configuration, transport: URLSessionTransport(allowsInsecureHTTP: configuration.allowsInsecureHTTP))
     }
 
     init(

@@ -52,7 +52,7 @@ public class Davy internal constructor(
         configuration = configuration,
         session = Session.start(context, configuration.environment, configuration.info),
         storageDirectory = configuration.storageDirectory ?: defaultStorageDirectory(context),
-        transport = HttpUrlConnectionTransport(),
+        transport = OkHttpTransport(configuration.allowsInsecureHttp),
         retryPolicy = RetryPolicy(),
         captureDiagnostics = Diagnostics(context.applicationContext)::capture,
         lifecycle = (context.applicationContext as? Application)?.let(::ActivityLifecycleSource),

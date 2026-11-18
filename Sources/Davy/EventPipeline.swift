@@ -119,7 +119,9 @@ actor EventPipeline {
         self.requestBuilder = RequestBuilder(configuration: configuration)
         self.transport = transport
         self.retryPolicy = retryPolicy
-        self.pauseFile = configuration.storageDirectory.appending(path: "paused-until", directoryHint: .notDirectory)
+        self.pauseFile = configuration.storageDirectory.appending(
+            path: "paused-until-\(RequestBuilder.destination(for: configuration.endpoint))", directoryHint: .notDirectory
+        )
         let store = FileEventStore(directory: configuration.storageDirectory.appending(path: "events", directoryHint: .isDirectory))
         self.store = store
         self.loggedCount = store.count
@@ -181,7 +183,7 @@ actor EventPipeline {
     private func persist(_ record: EventRecord) {
         guard let record = recordWithinMaxEventSize(record) else { return }
         do {
-            let pending = PendingEvent(session: session, event: record)
+            let pending = PendingEvent(session: session, event: record, destination: requestBuilder.destination)
             try store.append(DavyJSON.encoder.encode(pending), loggedAt: record.timestamp)
         } catch {
             logger.error("Failed to store event: \(error)")
@@ -342,13 +344,18 @@ actor EventPipeline {
         return (outcome, sent)
     }
 
-    /// Decodes stored events, discarding any that can't be decoded so they don't block the queue.
+    /// Discards invalid records and records not bound to the configured endpoint.
     private func decode(_ batch: [StoredEvent]) -> [(stored: StoredEvent, pending: PendingEvent)] {
         var decoded: [(stored: StoredEvent, pending: PendingEvent)] = []
         var undecodable: [StoredEvent] = []
+        var otherDestination: [StoredEvent] = []
         for stored in batch {
             if let pending = try? DavyJSON.decoder.decode(PendingEvent.self, from: stored.data) {
-                decoded.append((stored, pending))
+                if pending.destination == requestBuilder.destination {
+                    decoded.append((stored, pending))
+                } else {
+                    otherDestination.append(stored)
+                }
             } else {
                 undecodable.append(stored)
             }
@@ -356,6 +363,10 @@ actor EventPipeline {
         if !undecodable.isEmpty {
             logger.error("Discarding \(undecodable.count) undecodable event(s)")
             store.discard(undecodable)
+        }
+        if !otherDestination.isEmpty {
+            logger.info("Discarding \(otherDestination.count) event(s) without a matching destination")
+            store.discard(otherDestination)
         }
         return decoded
     }

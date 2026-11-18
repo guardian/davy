@@ -46,6 +46,7 @@ import kotlin.time.Duration.Companion.seconds
  *   [Davy.debugSnapshot] and [DavyDebugActivity]. The oldest are dropped once there are more. `0`
  *   keeps none. The history isn't stored on disk, so it starts empty each time an instance is
  *   created. Each request is kept with its body, so lower this if memory is tight.
+ * @property allowsInsecureHttp Allows plain HTTP for development. Defaults to `false`.
  */
 public data class DavyConfiguration(
     val endpoint: URI,
@@ -60,6 +61,7 @@ public data class DavyConfiguration(
     val maxEventAge: Duration = 30.days,
     val storageDirectory: File? = null,
     val debugHistoryLimit: Int = 200,
+    val allowsInsecureHttp: Boolean = false,
 )
 
 /**

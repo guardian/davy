@@ -1,13 +1,20 @@
+import CryptoKit
 import Foundation
 
 /// Builds the HTTP request that delivers events to the configured endpoint.
 struct RequestBuilder: Sendable {
     let endpoint: URL
     let headers: [String: String]
+    let destination: String
+
+    static func destination(for endpoint: URL) -> String {
+        SHA256.hash(data: Data(endpoint.absoluteString.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
 
     init(configuration: DavyConfiguration) {
         self.endpoint = configuration.endpoint
         self.headers = configuration.headers
+        self.destination = Self.destination(for: configuration.endpoint)
     }
 
     /// Builds a `POST` request delivering `events`, all logged in `session`, stamped with `sentAt`,
@@ -15,7 +22,7 @@ struct RequestBuilder: Sendable {
     func request(session: Session, events: [EventRecord], sentAt: Date) throws -> URLRequest {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-        for (field, value) in headers {
+        for (field, value) in headers where !["cookie", "cookie2"].contains(field.lowercased()) {
             request.setValue(value, forHTTPHeaderField: field)
         }
         for field in ["Content-Type", "User-Agent", "Accept-Language"] {

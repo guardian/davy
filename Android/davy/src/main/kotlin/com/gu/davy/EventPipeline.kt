@@ -42,7 +42,7 @@ internal class EventPipeline(
 
     private val batchSize = configuration.batchSize.coerceAtLeast(1)
     private val requestBuilder = RequestBuilder(configuration)
-    private val pauseFile = File(storageDirectory, "paused-until")
+    private val pauseFile = File(storageDirectory, "paused-until-${requestBuilder.destination}")
 
     /** Runs every change to the state below, one at a time. */
     private val executor = ScheduledThreadPoolExecutor(1) { Thread(it, "Davy").apply { isDaemon = true } }.apply {
@@ -166,7 +166,7 @@ internal class EventPipeline(
     private fun persist(record: EventRecord) {
         val storedRecord = recordWithinMaxEventSize(record) ?: return
         try {
-            store.append(DavyJson.pendingEvent(session, storedRecord).toByteArray(), storedRecord.timestampMillis)
+            store.append(DavyJson.pendingEvent(session, storedRecord, requestBuilder.destination).toByteArray(), storedRecord.timestampMillis)
         } catch (exception: IOException) {
             Log.e(TAG, "Failed to store event", exception)
             return
@@ -344,17 +344,25 @@ internal class EventPipeline(
         }
     }
 
-    /** Decodes stored events, discarding any that can't be decoded so they don't block the queue. */
+    /** Discards invalid records and records not bound to the configured endpoint. */
     private fun decode(batch: List<StoredEvent>): List<Pending> {
         val undecodable = mutableListOf<StoredEvent>()
+        val otherDestination = mutableListOf<StoredEvent>()
         val decoded = batch.mapNotNull { stored ->
             val pending = DavyJson.parsePendingEvent(stored.data.decodeToString())
-            if (pending == null) undecodable += stored
-            pending?.let { (session, event) -> Pending(stored, session, event) }
+            when {
+                pending == null -> { undecodable += stored; null }
+                pending.third != requestBuilder.destination -> { otherDestination += stored; null }
+                else -> Pending(stored, pending.first, pending.second)
+            }
         }
         if (undecodable.isNotEmpty()) {
             Log.e(TAG, "Discarding ${undecodable.size} undecodable event(s)")
             store.discard(undecodable)
+        }
+        if (otherDestination.isNotEmpty()) {
+            Log.i(TAG, "Discarding ${otherDestination.size} event(s) without a matching destination")
+            store.discard(otherDestination)
         }
         return decoded
     }

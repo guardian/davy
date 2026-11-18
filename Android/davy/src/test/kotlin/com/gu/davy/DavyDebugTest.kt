@@ -135,7 +135,7 @@ class DavyDebugTest {
         // Left over from earlier launches: one logged before the last hour, one expired, and one
         // that can't be decoded. Only the first can be sent, so only it counts as logged.
         for ((name, loggedAt) in listOf("earlier" to now - 2.hours.inWholeMilliseconds, "expired" to now - 31.days.inWholeMilliseconds)) {
-            store.append(DavyJson.pendingEvent(session, EventRecord.from(Event.Breadcrumb(name), loggedAt)).toByteArray(), loggedAt)
+            store.append(DavyJson.pendingEvent(session, EventRecord.from(Event.Breadcrumb(name), loggedAt), testDestination).toByteArray(), loggedAt)
         }
         store.append("""{"not":"an event"}""".toByteArray(), now - 60_000)
 

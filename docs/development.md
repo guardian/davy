@@ -13,7 +13,7 @@ Davy has a client for each platform, built to send exactly the same requests. Th
 | `TestServer/` | A local server to send events to while developing; see [Trying the clients against a server](#trying-the-clients-against-a-server) |
 | `docs/` | This documentation |
 
-Neither library has runtime dependencies. Only their tests use other libraries: Yams in Swift, and SnakeYAML, org.json, and AndroidX Test in Kotlin. Apps using Davy never fetch them.
+The Swift library has no runtime dependencies. Android uses OkHttp for its isolated telemetry HTTP client. Yams, SnakeYAML, org.json, and AndroidX Test are test-only dependencies.
 
 ## Keeping the clients in step
 
@@ -48,7 +48,7 @@ cd Android
 ./gradlew connectedAndroidTest
 ```
 
-The device tests check what only a real device can: the session data and diagnostics Davy reads from Android, sending over Android's HTTP stack, and the debug screen.
+The device tests check Android session data and diagnostics, network delivery, and the debug screen.
 
 ### The spec
 
@@ -111,7 +111,7 @@ Then open http://localhost:8080 and set the app's `endpoint` to the server. The 
 
 Any path works, as long as it doesn't start with `/_/`, which the server uses for its own page.
 
-The server uses plain HTTP, which platforms restrict:
+The server uses plain HTTP. For development, set `allowsInsecureHTTP: true` on Apple platforms or `allowsInsecureHttp = true` on Android, as the example apps do in debug builds. Platform restrictions still apply:
 
 - **Android** blocks plain HTTP, so allow it to `localhost` in debug builds with a network security config, as the example app does in `src/debug`. Use `adb reverse` rather than the emulator's `10.0.2.2` or your computer's IP address, since on Android 17, apps that target API 37 need the `ACCESS_LOCAL_NETWORK` permission to connect to local network addresses.
 - **macOS** apps in the App Sandbox need the **Outgoing Connections (Client)** capability, as the example app has.

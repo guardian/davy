@@ -58,5 +58,6 @@ class ExampleApplication : Application() {
         // Discard events that still haven't been delivered after 7 days (default 30 days).
         maxEventAge = 7.days,
         storageDirectory = Davy.defaultStorageDirectory(this),
+        allowsInsecureHttp = BuildConfig.DEBUG,
     )
 }

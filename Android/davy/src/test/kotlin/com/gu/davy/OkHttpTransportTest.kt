@@ -9,12 +9,17 @@ import org.junit.Test
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import java.io.IOException
+import java.net.CookieHandler
+import java.net.CookieManager
+import java.net.HttpCookie
 import java.net.ServerSocket
+import java.net.URI
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
-class HttpUrlConnectionTransportTest {
+class OkHttpTransportTest {
     /** A request as the server received it. */
     private class Received(val requestLine: String, val headers: Map<String, String>, val body: ByteArray)
 
@@ -83,11 +88,12 @@ class HttpUrlConnectionTransportTest {
                     "user-agent" to "Custom/1.0",
                     "accept-language" to "en-GB",
                     "content-type" to "text/plain",
+                    "cOoKiE" to "session=secret",
                 ),
             ),
         ).request(session, listOf(event), sentAtMillis = 1_700_000_005_000)
 
-        val response = HttpUrlConnectionTransport().send(request)
+        val response = OkHttpTransport(allowsInsecureHttp = true).send(request)
 
         assertEquals(429, response.statusCode)
         assertEquals("120", response.header("retry-after"))
@@ -98,6 +104,7 @@ class HttpUrlConnectionTransportTest {
         assertEquals("Davy", received.headers["user-agent"])
         assertEquals("*", received.headers["accept-language"])
         assertEquals("secret", received.headers["x-api-key"])
+        assertNull(received.headers["cookie"])
         assertArrayEquals(request.body, received.body)
     }
 
@@ -105,9 +112,38 @@ class HttpUrlConnectionTransportTest {
     fun noResponseIsAFailure() {
         val port = ServerSocket(0).use { it.localPort }
 
-        val result = HttpUrlConnectionTransport().deliver(HttpRequest("http://127.0.0.1:$port/events", emptyMap(), ByteArray(0)))
+        val result = OkHttpTransport(allowsInsecureHttp = true).deliver(HttpRequest("http://127.0.0.1:$port/events", emptyMap(), ByteArray(0)))
 
         assertNull(result.statusCode)
         assertTrue(result.outcome.toString(), result.outcome is DeliveryOutcome.Failed)
+    }
+
+    @Test
+    fun refusesCleartextAndDoesNotFollowRedirectsOrUseAppCookies() {
+        val other = server("HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+        val origin = server(
+            "HTTP/1.1 307 Temporary Redirect\r\nLocation: ${other.url}/other\r\n" +
+                "Set-Cookie: tracking=server; Path=/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        )
+        val endpoint = URI("${origin.url}/events")
+        val request = HttpRequest(endpoint.toString(), emptyMap(), "event".toByteArray())
+        val cookies = CookieManager()
+        cookies.cookieStore.add(endpoint, HttpCookie("session", "host").apply { path = "/" })
+        val previous = CookieHandler.getDefault()
+        try {
+            CookieHandler.setDefault(cookies)
+            org.junit.Assert.assertThrows(IOException::class.java) { OkHttpTransport().send(request) }
+            assertNull(origin.received.poll())
+
+            val transport = OkHttpTransport(allowsInsecureHttp = true)
+            repeat(2) {
+                assertEquals(307, transport.send(request).statusCode)
+                assertNull(origin.received.poll(5, TimeUnit.SECONDS)!!.headers["cookie"])
+            }
+            assertNull(other.received.poll())
+            assertEquals(listOf("session"), cookies.cookieStore.cookies.map { it.name })
+        } finally {
+            CookieHandler.setDefault(previous)
+        }
     }
 }

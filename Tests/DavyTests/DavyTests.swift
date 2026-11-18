@@ -346,7 +346,10 @@ struct DavyTests {
         let day: TimeInterval = 24 * 60 * 60
         let session = Session.start(environment: nil)
         for (name, loggedAt) in [("expired", Date.now.addingTimeInterval(-31 * day)), ("recent", Date.now.addingTimeInterval(-29 * day))] {
-            let pending = PendingEvent(session: session, event: EventRecord(.breadcrumb(name), timestamp: loggedAt))
+            let pending = PendingEvent(
+                session: session, event: EventRecord(.breadcrumb(name), timestamp: loggedAt),
+                destination: RequestBuilder.destination(for: URL(string: "https://example.com/events")!)
+            )
             try store.append(DavyJSON.encoder.encode(pending), loggedAt: loggedAt)
         }
 
@@ -355,6 +358,30 @@ struct DavyTests {
         await telemetry.flushAndWait()
 
         #expect(await transport.sentNames == ["recent"])
+        #expect(FileEventStore(directory: eventsDirectory).count == 0)
+    }
+
+    @Test func `Only events bound to the current endpoint are sent`() async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let eventsDirectory = directory.appending(path: "events", directoryHint: .isDirectory)
+        var store = FileEventStore(directory: eventsDirectory)
+        let session = Session.start(environment: nil)
+        let oldEndpoint = try #require(URL(string: "https://example.com/old"))
+        let timestamp = Date.now.addingTimeInterval(-60)
+        for (name, destination) in [("legacy", nil), ("old", RequestBuilder.destination(for: oldEndpoint))] {
+            let record = PendingEvent(
+                session: session, event: EventRecord(.breadcrumb(name), timestamp: timestamp), destination: destination
+            )
+            try store.append(DavyJSON.encoder.encode(record), loggedAt: timestamp)
+        }
+
+        let transport = MockTransport()
+        let telemetry = makeDavy(directory: directory, transport: transport, batchSize: 1)
+        telemetry.log(.breadcrumb("current"))
+        await telemetry.flushAndWait()
+
+        #expect(await transport.sentNames == ["current"])
         #expect(FileEventStore(directory: eventsDirectory).count == 0)
     }
 
@@ -789,7 +816,10 @@ struct DavyTests {
         // Left over from earlier launches: one logged before the last hour, one expired, and one
         // that can't be decoded. Only the first can be sent, so only it counts as logged.
         for (name, loggedAt) in [("earlier", Date.now.addingTimeInterval(-2 * 60 * 60)), ("expired", Date.now.addingTimeInterval(-31 * 24 * 60 * 60))] {
-            let pending = PendingEvent(session: session, event: EventRecord(.breadcrumb(name), timestamp: loggedAt))
+            let pending = PendingEvent(
+                session: session, event: EventRecord(.breadcrumb(name), timestamp: loggedAt),
+                destination: RequestBuilder.destination(for: URL(string: "https://example.com/events")!)
+            )
             try store.append(DavyJSON.encoder.encode(pending), loggedAt: loggedAt)
         }
         try store.append(Data(#"{"not":"an event"}"#.utf8), loggedAt: .now.addingTimeInterval(-60))
@@ -892,7 +922,8 @@ struct DavyTests {
         #expect(sent.sent.map(\.event) == logged.pending)
     }
 
-    @Test func urlSessionTransportSendsFixedUserAgentAndAcceptLanguageHeaders() async throws {
+    @Test(arguments: [204, 307])
+    func `Transport sends fixed headers and does not follow redirects`(status: Int) async throws {
         let serverSocket = socket(AF_INET, SOCK_STREAM, 0)
         try #require(serverSocket >= 0)
         defer { close(serverSocket) }
@@ -946,7 +977,9 @@ struct DavyTests {
                     remaining -= count
                 }
             }
-            let response = Data("HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n".utf8)
+            let statusLine = status == 204 ? "204 No Content" : "307 Temporary Redirect"
+            let location = status == 307 ? "Location: http://127.0.0.1:1/other\r\n" : ""
+            let response = Data("HTTP/1.1 \(statusLine)\r\n\(location)Content-Length: 0\r\nConnection: close\r\n\r\n".utf8)
             _ = response.withUnsafeBytes { write(client, $0.baseAddress, $0.count) }
             return (requestLine, headers)
         }.value
@@ -960,6 +993,7 @@ struct DavyTests {
                     "user-agent": "Custom/1.0",
                     "accept-language": "en-GB",
                     "content-type": "text/plain",
+                    "cOoKiE": "session=secret",
                 ]
             )
         )
@@ -968,15 +1002,19 @@ struct DavyTests {
             events: [EventRecord(.breadcrumb("checkout_started"), timestamp: .now)],
             sentAt: .now
         )
-        let response = try await URLSessionTransport(session: .davy).send(request)
+        await #expect(throws: DavyError.insecureEndpoint) {
+            try await URLSessionTransport().send(request)
+        }
+        let response = try await URLSessionTransport(allowsInsecureHTTP: true).send(request)
         let received = await receivedTask
 
-        #expect(response.statusCode == 204)
+        #expect(response.statusCode == status)
         #expect(received.requestLine == "POST /events HTTP/1.1")
         #expect(received.headers["content-type"] == "application/json")
         #expect(received.headers["user-agent"] == "Davy")
         #expect(received.headers["accept-language"] == "*")
         #expect(received.headers["x-api-key"] == "secret")
+        #expect(received.headers["cookie"] == nil)
     }
 
     #if os(macOS)

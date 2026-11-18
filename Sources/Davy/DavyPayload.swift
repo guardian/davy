@@ -16,6 +16,8 @@ struct DavyPayload: Encodable {
 struct PendingEvent: Codable, Sendable {
     let session: Session
     let event: EventRecord
+    // Omitted from debug JSON; records without a destination cannot be delivered.
+    var destination: String? = nil
 }
 
 /// The fixed JSON encoding used for both storage and requests, so every app sends the same shape.

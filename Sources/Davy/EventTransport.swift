@@ -3,6 +3,7 @@ import Foundation
 /// Errors produced when delivering a request.
 enum DavyError: Error {
     case invalidResponse
+    case insecureEndpoint
 }
 
 /// Sends a request. Throwing means no HTTP response was received, for example because the device
@@ -27,8 +28,13 @@ extension EventTransport {
 /// Sends requests with `URLSession.davy`.
 struct URLSessionTransport: EventTransport {
     var session: URLSession = .davy
+    var allowsInsecureHTTP = false
 
     func send(_ request: URLRequest) async throws -> HTTPURLResponse {
+        let scheme = request.url?.scheme?.lowercased()
+        guard scheme == "https" || (allowsInsecureHTTP && scheme == "http") else {
+            throw DavyError.insecureEndpoint
+        }
         let (_, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse else {
             throw DavyError.invalidResponse
@@ -46,8 +52,21 @@ extension URLSession {
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
-        return URLSession(configuration: configuration)
+        configuration.urlCredentialStorage = nil
+        return URLSession(configuration: configuration, delegate: DavySessionDelegate(), delegateQueue: nil)
     }()
+}
+
+private final class DavySessionDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
+    }
 }
 
 /// What a response means for the events in its request.

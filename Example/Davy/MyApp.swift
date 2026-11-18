@@ -19,6 +19,14 @@ import Davy
 
 /// Where and how events are delivered. Only `endpoint` is required; every other parameter is
 /// spelled out here to show what can be configured.
+private let allowsInsecureHTTP: Bool = {
+    #if DEBUG
+    true
+    #else
+    false
+    #endif
+}()
+
 private let DavyConfig = DavyConfiguration(
     // Debug builds send to the test server in `TestServer/`, running on this Mac; see
     // docs/development.md. On a device, replace `localhost` with the Mac's IP address.
@@ -69,5 +77,6 @@ private let DavyConfig = DavyConfiguration(
     storageDirectory: DavyConfiguration.defaultStorageDirectory,
     // Keep the 200 most recently sent events in memory for the "Debug Events" screen (the
     // default). 0 keeps none.
-    debugHistoryLimit: 200
+    debugHistoryLimit: 200,
+    allowsInsecureHTTP: allowsInsecureHTTP
 )
