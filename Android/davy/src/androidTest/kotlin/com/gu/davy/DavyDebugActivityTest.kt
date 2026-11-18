@@ -63,7 +63,7 @@ class DavyDebugActivityTest {
             val detail = monitor.waitForActivityWithTimeout(5_000) as DavyDebugActivity
             instrumentation.removeMonitor(monitor)
             activities += detail
-            assertTrue(waitUntil { onMain { "JSON" in texts(detail.window.decorView) } })
+            assertTrue(waitUntil { onMain { "EXAMPLE REQUEST JSON" in texts(detail.window.decorView) } })
             val detailTexts = onMain { texts(detail.window.decorView) }
 
             assertEquals("payment_declined", onMain { detail.title.toString() })

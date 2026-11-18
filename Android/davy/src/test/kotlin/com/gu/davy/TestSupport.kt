@@ -74,17 +74,17 @@ internal class FakeLifecycle : LifecycleSource {
 }
 
 /** Diagnostics like Android's, so tests don't depend on the device. */
-internal val testDiagnostics = mapOf(
-    Diagnostics.CPU_PERCENT to "3",
-    Diagnostics.MEMORY_USED_MB to "42",
-    Diagnostics.MEMORY_AVAILABLE_MB to "214",
+internal val testDiagnostics = mapOf<String, Any>(
+    Diagnostics.CPU_PERCENT to 3L,
+    Diagnostics.MEMORY_USED_MB to 42L,
+    Diagnostics.MEMORY_AVAILABLE_MB to 214L,
     Diagnostics.THERMAL_STATE to "none",
-    Diagnostics.LOW_POWER_MODE to "false",
+    Diagnostics.LOW_POWER_MODE to false,
 )
 
 internal fun temporaryDirectory(): File = Files.createTempDirectory("DavyTests").toFile()
 
-internal fun testSession(environment: String? = null, info: Map<String, String>? = null) = Session(
+internal fun testSession(environment: String? = null, info: Map<String, Any>? = null) = Session(
     id = UUID.randomUUID(),
     environment = environment,
     appVersion = "1.2.0",
@@ -101,7 +101,7 @@ internal fun makeDavy(
     transport: EventTransport,
     endpoint: String = "https://example.com/events",
     environment: String? = null,
-    info: Map<String, String> = emptyMap(),
+    info: Map<String, Any> = emptyMap(),
     onInvalidEventName: InvalidEventNameAction = InvalidEventNameAction.SEND,
     maxEventSize: Int = 4096,
     logsAppLifecycleEvents: Boolean = false,
@@ -171,6 +171,9 @@ internal fun JSONArray.objects(): List<JSONObject> = (0 until length()).map(::ge
 
 internal fun JSONObject.strings(): Map<String, String> = keys().asSequence().associateWith(::getString)
 
+/** An `info` object's values as [String], [Long], [Double], or [Boolean]. */
+internal fun JSONObject.infoValues(): Map<String, Any> = keys().asSequence().associateWith { InfoValues.normalize(get(it)) }
+
 /** `info` without the diagnostics added to errors. */
-internal fun JSONObject.loggedInfo(): Map<String, String>? =
-    optJSONObject("info")?.strings()?.filterKeys { it !in Diagnostics.KEYS }?.takeIf { it.isNotEmpty() }
+internal fun JSONObject.loggedInfo(): Map<String, Any>? =
+    optJSONObject("info")?.infoValues()?.filterKeys { it !in Diagnostics.KEYS }?.takeIf { it.isNotEmpty() }

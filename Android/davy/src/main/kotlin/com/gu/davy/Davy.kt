@@ -41,7 +41,7 @@ public class Davy internal constructor(
     storageDirectory: File,
     transport: EventTransport,
     retryPolicy: RetryPolicy,
-    private val captureDiagnostics: () -> Map<String, String>,
+    private val captureDiagnostics: () -> Map<String, Any>,
     lifecycle: LifecycleSource?,
 ) : Closeable {
     /**
@@ -109,7 +109,7 @@ public class Davy internal constructor(
      * The error's message isn't sent, since it can contain personal data. In builds minified with
      * R8, your own exception classes are renamed unless you keep their names.
      */
-    public fun log(error: Throwable, name: String, info: Map<String, String> = emptyMap()) {
+    public fun log(error: Throwable, name: String, info: Map<String, Any> = emptyMap()) {
         val type = error.javaClass.simpleName.ifEmpty { error.javaClass.name }
         log(Event.Error(name, info + (Event.ERROR_TYPE_INFO_KEY to type)))
     }
@@ -131,7 +131,7 @@ public class Davy internal constructor(
     @PublishedApi
     internal fun logDuration(name: String, startNanos: Long) {
         val milliseconds = ((System.nanoTime() - startNanos) / 1_000_000.0).roundToLong()
-        log(Event.Breadcrumb(name, mapOf(Event.DURATION_INFO_KEY to milliseconds.toString())))
+        log(Event.Breadcrumb(name, mapOf(Event.DURATION_INFO_KEY to milliseconds)))
     }
 
     /**
@@ -143,9 +143,9 @@ public class Davy internal constructor(
      * `session.info` (and each change starts a new batch). As with event `info`, don't include
      * personal data or values that identify a person or device across sessions.
      */
-    public fun addSessionInfo(info: Map<String, String>) {
+    public fun addSessionInfo(info: Map<String, Any>) {
         val record = EventRecord.from(Event.Breadcrumb(Event.SESSION_UPDATED_NAME, info), now())
-        pipeline.addSessionInfo(info, record)
+        pipeline.addSessionInfo(InfoValues.normalize(info), record)
     }
 
     /**

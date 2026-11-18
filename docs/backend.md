@@ -46,11 +46,11 @@ Each request contains between 1 and `batchSize` events from a single session, al
       "name": "payment_declined",
       "info": {
         "reason": "card_expired",
-        "cpu_percent": "12",
-        "memory_used_mb": "143",
-        "memory_available_mb": "2650",
+        "cpu_percent": 12,
+        "memory_used_mb": 143,
+        "memory_available_mb": 2650,
         "thermal_state": "nominal",
-        "low_power_mode": "false"
+        "low_power_mode": false
       },
       "timestamp": "2026-11-09T11:38:57.112Z"
     }
@@ -72,7 +72,7 @@ Set `batchSize` to `1` to send each event as its own request with a single-eleme
 | `osVersion` | `major.minor.patch`, for example `26.1.0`, or `15.0.0` for Android 15 |
 | `deviceModel` | The hardware model identifier on Apple platforms, such as `iPhone17,1`, or `Simulator`; the model name on Android, such as `Pixel 9` |
 | `locale` | The device's language and region only, for example `en_GB`, or just the language if there's no region |
-| `info` | The configured `info` and any entries added with `addSessionInfo`, as strings, for additional app and session details; omitted if empty |
+| `info` | The configured `info` and any entries added with `addSessionInfo`, as [info values](#info-values), for additional app and session details; omitted if empty |
 
 The session ID is kept in memory and never reused, so it links events within a session without identifying the user or device across sessions. Events left over from a previous launch are sent in their own request with their original session data, so they're attributed to the app and OS version they were logged in, even after an update.
 
@@ -83,7 +83,7 @@ The session ID is kept in memory and never reused, so it links events within a s
 | `id` | A random UUID generated when the event is logged and sent unchanged with every retry, so the server can discard duplicates |
 | `type` | `breadcrumb` or `error` |
 | `name` | The name the event was logged with |
-| `info` | The event's details as strings, with [diagnostics](#diagnostics) added for errors; omitted if empty |
+| `info` | The event's details as [info values](#info-values), with [diagnostics](#diagnostics) added for errors; omitted if empty |
 | `timestamp` | When the event was logged, by the device's clock, as ISO 8601 in UTC with milliseconds |
 
 ## Request fields
@@ -119,6 +119,12 @@ The keys are the same on every platform, but the values come from each platform 
 | `memory_used_mb` | The app's memory footprint, as shown by Xcode's memory gauge | The app's Java and native heap use |
 | `memory_available_mb` | How much more the app can use before the system terminates it; omitted where there's no limit, such as on macOS or in Simulator | How much more the Java heap can grow before the app runs out of memory |
 | `thermal_state` | `nominal`, `fair`, `serious`, or `critical` | `none`, `light`, `moderate`, `severe`, `critical`, `emergency`, or `shutdown`; omitted before Android 10 |
-| `low_power_mode` | Whether Low Power Mode is on, `true` or `false` | Whether Battery Saver is on, `true` or `false` |
+| `low_power_mode` | Whether Low Power Mode is on, as a Boolean | Whether Battery Saver is on, as a Boolean |
 
-Like all `info` values, they're strings, and memory is in whole megabytes. Each key except `low_power_mode` is omitted if its value can't be read.
+CPU and memory are whole numbers, and memory is in whole megabytes. Each key except `low_power_mode` is omitted if its value can't be read.
+
+## Info values
+
+Each `info` value is a JSON string, number, or Boolean, matching the type the app logged, so `"attempt": 2` and `"attempt": "2"` are different values. Store them so you can query numbers as numbers, for example in a JSON column. Numbers beyond ±2^53 may lose precision. A non-finite number is sent as the string `"inf"`, `"-inf"`, or `"nan"`. Davy's own keys are typed too: `duration_ms` and `size` are integers, and diagnostics are as described above.
+
+Versions before 2.0.0 of the spec sent every value as a string.

@@ -50,10 +50,10 @@ class DeviceTest {
         val info = diagnostics.capture()
 
         assertTrue("$info", Diagnostics.KEYS.containsAll(info.keys))
-        assertTrue("$info", info.getValue(Diagnostics.CPU_PERCENT).toInt() >= 0)
-        assertTrue("$info", info.getValue(Diagnostics.MEMORY_USED_MB).toInt() > 0)
-        assertTrue("$info", info.getValue(Diagnostics.MEMORY_AVAILABLE_MB).toInt() > 0)
-        assertTrue("$info", info[Diagnostics.LOW_POWER_MODE] in setOf("true", "false"))
+        assertTrue("$info", (info.getValue(Diagnostics.CPU_PERCENT) as Long) >= 0)
+        assertTrue("$info", (info.getValue(Diagnostics.MEMORY_USED_MB) as Long) > 0)
+        assertTrue("$info", (info.getValue(Diagnostics.MEMORY_AVAILABLE_MB) as Long) > 0)
+        assertTrue("$info", info[Diagnostics.LOW_POWER_MODE] is Boolean)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val states = setOf("none", "light", "moderate", "severe", "critical", "emergency", "shutdown")
             assertTrue("$info", info[Diagnostics.THERMAL_STATE] in states)

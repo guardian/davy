@@ -20,7 +20,7 @@ enum Diagnostics {
     static let memoryAvailableKey = "memory_available_mb"
     /// The device's thermal state: `"nominal"`, `"fair"`, `"serious"`, or `"critical"`.
     static let thermalStateKey = "thermal_state"
-    /// Whether Low Power Mode is on: `"true"` or `"false"`.
+    /// Whether Low Power Mode is on, as a Boolean.
     static let lowPowerModeKey = "low_power_mode"
 
     /// Every key ``capture()`` can return.
@@ -31,14 +31,14 @@ enum Diagnostics {
     /// Captures the current state of the app and device as `info` entries, omitting any value
     /// that can't be read. Takes a few microseconds per thread in the app, so it's only done for
     /// errors.
-    static func capture() -> [String: String] {
+    static func capture() -> [String: Davy.InfoValue] {
         let processInfo = ProcessInfo.processInfo
-        let values: [String: String?] = [
-            cpuPercentKey: cpuPercent.map(String.init),
-            memoryUsedKey: memoryFootprint.map(megabytes).map(String.init),
-            memoryAvailableKey: memoryAvailable.map(megabytes).map(String.init),
-            thermalStateKey: thermalState(processInfo.thermalState),
-            lowPowerModeKey: String(processInfo.isLowPowerModeEnabled),
+        let values: [String: Davy.InfoValue?] = [
+            cpuPercentKey: cpuPercent.map(Davy.InfoValue.int),
+            memoryUsedKey: memoryFootprint.map(megabytes).map(Davy.InfoValue.int),
+            memoryAvailableKey: memoryAvailable.map(megabytes).map(Davy.InfoValue.int),
+            thermalStateKey: thermalState(processInfo.thermalState).map(Davy.InfoValue.string),
+            lowPowerModeKey: .bool(processInfo.isLowPowerModeEnabled),
         ]
         return values.compactMapValues { $0 }
     }

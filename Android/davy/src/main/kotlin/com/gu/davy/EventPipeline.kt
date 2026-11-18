@@ -106,7 +106,7 @@ internal class EventPipeline(
         submit { persist(record) }
     }
 
-    fun addSessionInfo(info: Map<String, String>, record: EventRecord) {
+    fun addSessionInfo(info: Map<String, Any>, record: EventRecord) {
         submit {
             session = session.addingInfo(info)
             persist(record)
@@ -187,7 +187,7 @@ internal class EventPipeline(
         val size = requestBuilder.size(record, session)
         if (size <= maxSize) return record
 
-        val info = mutableMapOf(Event.REJECTED_NAME_INFO_KEY to record.name, Event.SIZE_INFO_KEY to size.toString())
+        val info = mutableMapOf<String, Any>(Event.REJECTED_NAME_INFO_KEY to record.name, Event.SIZE_INFO_KEY to size.toLong())
         // An error's diagnostics describe when it happened, so they're kept with the replacement.
         if (record.type == EventRecord.Type.ERROR) {
             record.info.orEmpty().filterKeys { it in Diagnostics.KEYS && it !in info }.forEach { (key, value) -> info[key] = value }

@@ -85,7 +85,7 @@ internal object DavyJson {
         osVersion = json.getString("osVersion"),
         deviceModel = json.stringOrNull("deviceModel"),
         locale = json.stringOrNull("locale"),
-        info = json.optJSONObject("info")?.let { info -> info.keys().asSequence().associateWith(info::getString) }?.takeIf { it.isNotEmpty() },
+        info = json.optJSONObject("info")?.let(::parseInfo)?.takeIf { it.isNotEmpty() },
     )
 
     /** Reads an event in the form [payload] writes it. */
@@ -95,9 +95,13 @@ internal object DavyJson {
             EventRecord.Type.entries.firstOrNull { it.wireName == type } ?: throw IllegalArgumentException("Unknown event type $type")
         },
         name = json.getString("name"),
-        info = json.optJSONObject("info")?.let { info -> info.keys().asSequence().associateWith(info::getString) },
+        info = json.optJSONObject("info")?.let(::parseInfo),
         timestampMillis = parseTimestamp(json.getString("timestamp")),
     )
+
+    /** Reads `info`, including values stored as strings by earlier versions. */
+    private fun parseInfo(json: JSONObject): Map<String, Any> =
+        json.keys().asSequence().associateWith { key -> InfoValues.normalize(json.get(key)) }
 
     private fun JSONObject.stringOrNull(key: String): String? = if (isNull(key)) null else getString(key)
 
@@ -129,7 +133,10 @@ internal object DavyJson {
         )
     }
 
-    /** An object of strings and nested string maps, omitting `null` values. */
+    /**
+     * An object of strings, numbers, Booleans, and nested maps of them, omitting `null` values.
+     * Numbers must be finite, as [InfoValues.normalize] ensures for `info`.
+     */
     private fun StringBuilder.appendObject(fields: Map<String, Any?>) {
         append('{')
         var first = true
@@ -139,11 +146,13 @@ internal object DavyJson {
             first = false
             appendString(key)
             append(':')
-            if (value is Map<*, *>) {
-                @Suppress("UNCHECKED_CAST")
-                appendObject(value as Map<String, Any?>)
-            } else {
-                appendString(value.toString())
+            when (value) {
+                is Map<*, *> -> {
+                    @Suppress("UNCHECKED_CAST")
+                    appendObject(value as Map<String, Any?>)
+                }
+                is Boolean, is Long, is Double -> append(value.toString())
+                else -> appendString(value.toString())
             }
         }
         append('}')

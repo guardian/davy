@@ -1,6 +1,6 @@
 # Logging events
 
-Davy has two kinds of event, each with a name you choose and optional details as strings in `info`:
+Davy has two kinds of event, each with a name you choose and optional details in `info` as strings, numbers, or Booleans:
 
 - A **breadcrumb** records that something happened, such as `checkout_started`.
 - An **error** records that something went wrong, such as `payment_declined`.
@@ -9,15 +9,17 @@ Davy has two kinds of event, each with a name you choose and optional details as
 // Swift
 telemetry.log(.breadcrumb("checkout_started"))
 telemetry.log(.breadcrumb("payment_selected", info: ["payment_method": "apple_pay"]))
-telemetry.log(.error("payment_declined", info: ["reason": "card_expired"]))
+telemetry.log(.error("payment_declined", info: ["reason": "card_expired", "attempt": 2, "saved_card": true]))
 ```
 
 ```kotlin
 // Kotlin
 telemetry.log(Event.Breadcrumb("checkout_started"))
 telemetry.log(Event.Breadcrumb("payment_selected", mapOf("payment_method" to "google_pay")))
-telemetry.log(Event.Error("payment_declined", mapOf("reason" to "card_expired")))
+telemetry.log(Event.Error("payment_declined", mapOf("reason" to "card_expired", "attempt" to 2, "saved_card" to true)))
 ```
+
+Values are sent as the matching JSON type, so you can sum or average numbers in your backend. In Swift, literals convert automatically, and variables are wrapped with `.string(_:)`, `.int(_:)`, `.double(_:)`, or `.bool(_:)`, for example `["attempt": .int(attempt)]`. In Kotlin, any other value is sent as its `toString()`.
 
 Logging returns immediately and is safe from any thread. Each event is written to disk, then sent in the background; see [How delivery works](delivery.md).
 
@@ -68,7 +70,7 @@ Pass `info` to add details. Any `error_type` in it is replaced.
 let feed = try await telemetry.measure("feed_load") {
     try await loadFeed()
 }
-// Logs .breadcrumb("feed_load", info: ["duration_ms": "412"])
+// Logs .breadcrumb("feed_load", info: ["duration_ms": 412])
 ```
 
 ```kotlin
@@ -76,7 +78,7 @@ let feed = try await telemetry.measure("feed_load") {
 val feed = telemetry.measure("feed_load") {
     loadFeed()
 }
-// Logs Event.Breadcrumb("feed_load", mapOf("duration_ms" to "412"))
+// Logs Event.Breadcrumb("feed_load", mapOf("duration_ms" to 412))
 ```
 
 The breadcrumb is logged even if the block throws, so log an error as well if you need to tell failures apart.
@@ -159,7 +161,7 @@ val telemetry = Davy(context, DavyConfiguration(
 
 Each event must fit in `maxEventSize` bytes (default 4,096), measured as the UTF-8 length of a single-event JSON request body, including the session data and an error's diagnostics, so a single large event can't make a batch request too large for the server to accept.
 
-An event over the limit is replaced with the error `davy_event_too_large`, with `info` `{ "rejected_name": "checkout_started", "size": "4391" }`, and an error is logged to the console. The original event's `info` isn't sent, but an error's diagnostics are. If the replacement is also too large, for example because the name is very long, nothing is sent.
+An event over the limit is replaced with the error `davy_event_too_large`, with `info` `{ "rejected_name": "checkout_started", "size": 4391 }`, and an error is logged to the console. The original event's `info` isn't sent, but an error's diagnostics are. If the replacement is also too large, for example because the name is very long, nothing is sent.
 
 The session data, IDs, timestamps, and JSON structure take about 340 bytes, leaving roughly 3,750 for the name and `info`. An error's diagnostics take about 140 more.
 

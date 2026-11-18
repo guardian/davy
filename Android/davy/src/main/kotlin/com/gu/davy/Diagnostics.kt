@@ -34,18 +34,20 @@ internal class Diagnostics(context: Context) {
      *   out of memory.
      * - `thermal_state`: `none`, `light`, `moderate`, `severe`, `critical`, `emergency`, or
      *   `shutdown`, on Android 10 and later.
-     * - `low_power_mode`: whether Battery Saver is on, `true` or `false`.
+     * - `low_power_mode`: whether Battery Saver is on, as a Boolean.
+     *
+     * The CPU and memory values are [Long]s.
      */
     @Synchronized
-    fun capture(): Map<String, String> {
+    fun capture(): Map<String, Any> {
         val runtime = Runtime.getRuntime()
         val javaHeapUsed = runtime.totalMemory() - runtime.freeMemory()
-        val info = linkedMapOf<String, String>()
-        cpuPercent()?.let { info[CPU_PERCENT] = it.toString() }
-        info[MEMORY_USED_MB] = megabytes(javaHeapUsed + Debug.getNativeHeapAllocatedSize()).toString()
-        info[MEMORY_AVAILABLE_MB] = megabytes(runtime.maxMemory() - javaHeapUsed).toString()
+        val info = linkedMapOf<String, Any>()
+        cpuPercent()?.let { info[CPU_PERCENT] = it.toLong() }
+        info[MEMORY_USED_MB] = megabytes(javaHeapUsed + Debug.getNativeHeapAllocatedSize()).toLong()
+        info[MEMORY_AVAILABLE_MB] = megabytes(runtime.maxMemory() - javaHeapUsed).toLong()
         thermalState()?.let { info[THERMAL_STATE] = it }
-        powerManager?.let { info[LOW_POWER_MODE] = it.isPowerSaveMode.toString() }
+        powerManager?.let { info[LOW_POWER_MODE] = it.isPowerSaveMode }
         return info
     }
 

@@ -9,18 +9,20 @@ extension Davy {
     /// that vary per user. Use ``DavyConfiguration/onInvalidEventName`` to enforce lower snake
     /// case names.
     ///
-    /// Use `info` for additional details, for example `["payment_method": "apple_pay"]`. The same
-    /// rules apply: no personal data.
+    /// Use `info` for additional details, for example
+    /// `["payment_method": "apple_pay", "attempt": 2, "saved_card": true]`. Literals convert to
+    /// ``InfoValue`` automatically; wrap variables, for example `["attempt": .int(attempt)]`. The
+    /// same rules apply: no personal data.
     public enum Event: Sendable, Hashable {
         /// A step the user or app took, for example `"checkout_started"`.
-        case breadcrumb(String, info: [String: String] = [:])
+        case breadcrumb(String, info: [String: InfoValue] = [:])
         /// The fact that an error occurred, for example `"payment_declined"`.
         ///
         /// When an error is logged, the app's CPU and memory usage, the memory it has left, the
         /// device's thermal state, and whether Low Power Mode is on are added to `info` under
         /// `cpu_percent`, `memory_used_mb`, `memory_available_mb`, `thermal_state`, and
         /// `low_power_mode`, replacing any values already there.
-        case error(String, info: [String: String] = [:])
+        case error(String, info: [String: InfoValue] = [:])
     }
 }
 
@@ -32,7 +34,7 @@ extension Davy.Event {
         }
     }
 
-    var info: [String: String] {
+    var info: [String: Davy.InfoValue] {
         switch self {
         case let .breadcrumb(_, info), let .error(_, info):
             info
@@ -95,7 +97,7 @@ extension Davy.Event {
 /// ```json
 /// {
 ///   "id": "…", "type": "error", "name": "payment_declined",
-///   "info": { "reason": "card_expired", "cpu_percent": "12", "memory_used_mb": "143", "memory_available_mb": "2650", "thermal_state": "nominal", "low_power_mode": "false" },
+///   "info": { "reason": "card_expired", "cpu_percent": 12, "memory_used_mb": 143, "memory_available_mb": 2650, "thermal_state": "nominal", "low_power_mode": false },
 ///   "timestamp": "2026-11-09T11:38:55.780Z"
 /// }
 /// ```
@@ -112,7 +114,7 @@ struct EventRecord: Codable, Sendable, Hashable {
     let name: String
     /// Additional details, including an error's ``Diagnostics``. `nil` when empty, so the key is
     /// omitted from the JSON.
-    let info: [String: String]?
+    let info: [String: Davy.InfoValue]?
     /// When the event was logged. Encoded as ISO 8601 with fractional seconds.
     let timestamp: Date
 

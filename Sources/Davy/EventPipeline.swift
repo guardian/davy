@@ -48,7 +48,7 @@ actor EventPipeline {
         case log(EventRecord)
         /// Merges the dictionary into the current session's `info` and logs the
         /// `"session_updated"` breadcrumb.
-        case addSessionInfo([String: String], EventRecord)
+        case addSessionInfo([String: Davy.InfoValue], EventRecord)
         /// Sends all pending events, ignoring any retry backoff but not a server-requested pause.
         /// Resumes the continuation once done.
         case flush(CheckedContinuation<Void, Never>?)
@@ -209,9 +209,9 @@ actor EventPipeline {
             return record
         }
 
-        var info = [
-            Davy.Event.rejectedNameInfoKey: record.name,
-            Davy.Event.sizeInfoKey: String(size),
+        var info: [String: Davy.InfoValue] = [
+            Davy.Event.rejectedNameInfoKey: .string(record.name),
+            Davy.Event.sizeInfoKey: .int(size),
         ]
         // An error's diagnostics describe when it happened, so they're kept with the replacement.
         if record.type == .error, let recordInfo = record.info {

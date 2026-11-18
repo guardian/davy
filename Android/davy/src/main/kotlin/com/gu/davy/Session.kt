@@ -31,20 +31,20 @@ internal data class Session(
     /** The device's language and region, for example `en_GB`. */
     val locale: String?,
     /** [DavyConfiguration.info] and any entries added with [Davy.addSessionInfo], omitted when empty. */
-    val info: Map<String, String>? = null,
+    val info: Map<String, Any>? = null,
 ) {
     /**
      * Returns a copy of this session with [additionalInfo] merged into [info], replacing any
      * existing values for the same keys.
      */
-    fun addingInfo(additionalInfo: Map<String, String>): Session =
+    fun addingInfo(additionalInfo: Map<String, Any>): Session =
         copy(info = (info.orEmpty() + additionalInfo).takeIf { it.isNotEmpty() })
 
     companion object {
         const val OS = "Android"
 
         /** Captures the current app and device data for a new session. */
-        fun start(context: Context, environment: String?, info: Map<String, String> = emptyMap()): Session {
+        fun start(context: Context, environment: String?, info: Map<String, Any> = emptyMap()): Session {
             val packageInfo = packageInfo(context)
             return Session(
                 id = UUID.randomUUID(),
@@ -55,7 +55,7 @@ internal data class Session(
                 osVersion = osVersion(Build.VERSION.RELEASE),
                 deviceModel = Build.MODEL?.takeIf { it.isNotBlank() },
                 locale = locale(Locale.getDefault()),
-                info = info.takeIf { it.isNotEmpty() },
+                info = info.takeIf { it.isNotEmpty() }?.let(InfoValues::normalize),
             )
         }
 

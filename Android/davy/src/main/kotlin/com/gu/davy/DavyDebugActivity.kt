@@ -370,7 +370,7 @@ public class DavyDebugActivity : Activity() {
         if (event.info.isEmpty()) {
             content.addView(caption("None"))
         } else {
-            event.info.toSortedMap().forEach { (key, value) -> content.addView(field(key, text(value))) }
+            event.info.toSortedMap().forEach { (key, value) -> content.addView(field(key, text(value.toString()))) }
         }
 
         val session = event.session
@@ -382,7 +382,7 @@ public class DavyDebugActivity : Activity() {
         content.addView(field("OS", text("${session.os} ${session.osVersion}")))
         content.addView(field("Device Model", text(session.deviceModel ?: "—")))
         content.addView(field("Locale", text(session.locale ?: "—")))
-        session.info?.toSortedMap()?.forEach { (key, value) -> content.addView(field(key, text(value))) }
+        session.info?.toSortedMap()?.forEach { (key, value) -> content.addView(field(key, text(value.toString()))) }
 
         val json = event.exampleRequestJson
         content.addView(sectionHeader("Example Request JSON"))

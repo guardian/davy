@@ -116,8 +116,39 @@ class DavyTest {
         assertNull(events[0].optJSONObject("info"))
         assertEquals(listOf(mapOf("reason" to "card_expired"), mapOf("rejected_name" to "checkoutStarted")), events.drop(1).map { it.loggedInfo() })
         for (event in events.drop(1)) {
-            assertEquals(testDiagnostics, event.getJSONObject("info").strings().filterKeys { it in Diagnostics.KEYS })
+            assertEquals(testDiagnostics, event.getJSONObject("info").infoValues().filterKeys { it in Diagnostics.KEYS })
         }
+    }
+
+    @Test
+    fun infoValuesAreSentAsTheirJSONTypes() {
+        val transport = MockTransport()
+        val telemetry = makeDavy(directory(), transport, info = mapOf("tier" to "supporter", "beta" to true, "articles_read" to 17)).tracked()
+
+        telemetry.log(
+            Event.Breadcrumb(
+                "feed_loaded",
+                mapOf("count" to 3, "total" to 9_007_199_254_740_991L, "ratio" to 0.25, "scale" to 1.5f, "cached" to false, "code" to "404", "bad" to Double.NaN),
+            ),
+        )
+        telemetry.flushAndWaitBlocking()
+
+        val payload = transport.payloads.single()
+        val session = payload.getJSONObject("session").getJSONObject("info")
+        assertEquals(true, session.get("beta"))
+        assertEquals(17L, session.getLong("articles_read"))
+        val info = payload.getJSONArray("events").getJSONObject(0).getJSONObject("info")
+        assertEquals(
+            mapOf("count" to 3L, "total" to 9_007_199_254_740_991L, "ratio" to 0.25, "scale" to 1.5, "cached" to false, "code" to "404", "bad" to "nan"),
+            info.infoValues(),
+        )
+        assertTrue(info.get("code") is String)
+    }
+
+    @Test
+    fun infoStoredAsStringsByEarlierVersionsStillDecodes() {
+        val json = JSONObject("""{"id":"6F1D2C4B-8A3E-4F5D-9C7B-1E2A3B4C5D6E","timestamp":"2026-11-09T11:38:57.112Z","type":"breadcrumb","name":"feed_loaded","info":{"count":"3","cached":"true"}}""")
+        assertEquals(mapOf("count" to "3", "cached" to "true"), DavyJson.parseEvent(json).info)
     }
 
     @Test
@@ -363,10 +394,10 @@ class DavyTest {
         val events = transport.sentEvents
         assertEquals(listOf("breadcrumb", "error", "error"), events.map { it.getString("type") })
         assertEquals(listOf("checkout_started", "davy_event_too_large", "davy_event_too_large"), events.map { it.getString("name") })
-        assertEquals(fitting.info, events[0].getJSONObject("info").strings())
-        assertEquals(mapOf("rejected_name" to "checkout_started", "size" to "${size + 1}"), events[1].getJSONObject("info").strings())
+        assertEquals(fitting.info, events[0].getJSONObject("info").infoValues())
+        assertEquals(mapOf("rejected_name" to "checkout_started", "size" to (size + 1).toLong()), events[1].getJSONObject("info").infoValues())
         // A replaced error keeps its diagnostics, but not the rest of its info.
-        val replacedError = events[2].getJSONObject("info").strings()
+        val replacedError = events[2].getJSONObject("info").infoValues()
         assertEquals(setOf("rejected_name", "size"), events[2].loggedInfo()?.keys)
         assertEquals("payment_declined", replacedError["rejected_name"])
         assertEquals(testDiagnostics[Diagnostics.LOW_POWER_MODE], replacedError[Diagnostics.LOW_POWER_MODE])
@@ -505,7 +536,7 @@ class DavyTest {
         assertEquals(listOf("sync_work", "failing_work", "async_work"), events.map { it.getString("name") })
         assertEquals(listOf("breadcrumb", "breadcrumb", "breadcrumb"), events.map { it.getString("type") })
         for (event in events) {
-            assertTrue(event.getJSONObject("info").getString("duration_ms").toLong() >= 0)
+            assertTrue(event.getJSONObject("info").getLong("duration_ms") >= 0)
         }
     }
 

@@ -64,7 +64,7 @@ public data class DavyDebugSnapshot(
         public val name: String get() = record.name
 
         /** The event's additional details. */
-        public val info: Map<String, String> get() = record.info.orEmpty()
+        public val info: Map<String, Any> get() = record.info.orEmpty()
 
         /** When the event was logged. */
         public val timestampMillis: Long get() = record.timestampMillis
@@ -73,7 +73,7 @@ public data class DavyDebugSnapshot(
         public val sessionId: UUID get() = session.id
 
         /** The session's additional details, set with [DavyConfiguration.info] when the session started. */
-        public val sessionInfo: Map<String, String> get() = session.info.orEmpty()
+        public val sessionInfo: Map<String, Any> get() = session.info.orEmpty()
 
         /** Whether the event is an error rather than a breadcrumb. */
         public val isError: Boolean get() = record.type == EventRecord.Type.ERROR

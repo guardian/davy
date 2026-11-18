@@ -106,7 +106,7 @@ struct SpecConformanceTests {
         telemetry.log(CheckoutError(), name: "checkout_failed")
         telemetry.measure("feed_load") {}
         // Replaced with a "davy_event_too_large" error.
-        telemetry.log(.breadcrumb("large_event", info: ["blob": String(repeating: "x", count: 5000)]))
+        telemetry.log(.breadcrumb("large_event", info: ["blob": .string(String(repeating: "x", count: 5000))]))
         await telemetry.flushAndWait()
 
         let requests = await transport.requests
@@ -204,7 +204,7 @@ struct SpecConformanceTests {
         case emptyName
         case missingSessionID
         case extraSessionField
-        case numberInInfo
+        case objectInInfo
         case noEvents
         case missingSentAt
         case sentAtWithoutMilliseconds
@@ -267,10 +267,10 @@ struct SpecConformanceTests {
                 session["deviceId"] = "123"
                 payload["session"] = session
             }
-        case .numberInInfo:
+        case .objectInInfo:
             try changingBody(of: batch) { payload in
                 var events = payload["events"] as? [[String: Any]] ?? []
-                events[0]["info"] = ["cpu_percent": 3]
+                events[0]["info"] = ["payment": ["method": "apple_pay"]]
                 payload["events"] = events
             }
         case .noEvents:

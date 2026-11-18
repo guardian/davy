@@ -51,7 +51,7 @@ import kotlin.time.Duration.Companion.seconds
 public data class DavyConfiguration(
     val endpoint: URI,
     val environment: String? = null,
-    val info: Map<String, String> = emptyMap(),
+    val info: Map<String, Any> = emptyMap(),
     val onInvalidEventName: InvalidEventNameAction = InvalidEventNameAction.SEND,
     val maxEventSize: Int = 4096,
     val logsAppLifecycleEvents: Boolean = false,

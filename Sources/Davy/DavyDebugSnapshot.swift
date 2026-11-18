@@ -103,7 +103,7 @@ extension DavyDebugSnapshot {
         public var name: String { record.name }
 
         /// The event's additional details.
-        public var info: [String: String] { record.info ?? [:] }
+        public var info: [String: Davy.InfoValue] { record.info ?? [:] }
 
         /// When the event was logged.
         public var timestamp: Date { record.timestamp }
@@ -114,7 +114,7 @@ extension DavyDebugSnapshot {
 
         /// The session's additional details, set with ``DavyConfiguration/info`` when the session
         /// started.
-        public var sessionInfo: [String: String] { session.info ?? [:] }
+        public var sessionInfo: [String: Davy.InfoValue] { session.info ?? [:] }
 
         var isError: Bool { record.type == .error }
 

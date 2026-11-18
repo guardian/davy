@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Davy events
-  version: 1.0.0
+  version: 2.0.0
   summary: The requests Davy clients send to your endpoint, and the responses they act on.
   description: |
     The contract between Davy clients and the endpoint that receives their events. Every client
@@ -94,11 +94,12 @@ paths:
                   name: payment_declined
                   info:
                     reason: card_expired
-                    cpu_percent: '12'
-                    memory_used_mb: '143'
-                    memory_available_mb: '2650'
+                    attempt: 2
+                    cpu_percent: 12
+                    memory_used_mb: 143
+                    memory_available_mb: 2650
                     thermal_state: nominal
-                    low_power_mode: 'false'
+                    low_power_mode: false
                   timestamp: '2026-11-09T11:38:57.112Z'
       responses:
         '2XX':
@@ -221,30 +222,38 @@ components:
     Info:
       type: object
       description: |
-        Details as strings, omitted when empty. Keys are chosen by the app, apart from these:
+        Details as strings, numbers, and Booleans, omitted when empty. Numbers are integers or
+        decimals; integers beyond ±2^53 can lose precision in some JSON parsers. Keys are chosen by
+        the app, apart from these:
 
         - Diagnostics, added to every error. They vary by platform. On Apple platforms they are
           `cpu_percent`, `memory_used_mb`, `memory_available_mb` (omitted where there's no memory
           limit), `thermal_state` (`nominal`, `fair`, `serious`, or `critical`), and
-          `low_power_mode` (`true` or `false`). On Android they are `cpu_percent` (averaged since
-          the previous error or launch), `memory_used_mb` (Java and native heap),
-          `memory_available_mb` (Java heap left), `thermal_state` (`none`, `light`, `moderate`,
-          `severe`, `critical`, `emergency`, or `shutdown`, on Android 10 and later), and
-          `low_power_mode` (whether Battery Saver is on).
+          `low_power_mode`. On Android they are `cpu_percent` (averaged since the previous error or
+          launch), `memory_used_mb` (Java and native heap), `memory_available_mb` (Java heap left),
+          `thermal_state` (`none`, `light`, `moderate`, `severe`, `critical`, `emergency`, or
+          `shutdown`, on Android 10 and later), and `low_power_mode` (whether Battery Saver is on).
+          The CPU and memory values are integers, `thermal_state` is a string, and
+          `low_power_mode` is a Boolean.
         - `error_type`: the type of an error logged from a platform error, such as a Swift `Error`
-          or a Kotlin `Throwable`, but not its description.
-        - `duration_ms`: how long a measured operation took, in milliseconds.
-        - `rejected_name` and `size`: see `davy_invalid_event_name` and `davy_event_too_large`.
+          or a Kotlin `Throwable`, but not its description, as a string.
+        - `duration_ms`: how long a measured operation took, as an integer number of milliseconds.
+        - `rejected_name` (a string) and `size` (an integer): see `davy_invalid_event_name` and
+          `davy_event_too_large`.
+
+        Decimals that JSON can't represent, infinity and NaN, are sent as the strings `inf`,
+        `-inf`, and `nan`.
       minProperties: 1
       additionalProperties:
-        type: string
+        type: [string, number, boolean]
       examples:
         - reason: card_expired
-          cpu_percent: '12'
-          memory_used_mb: '143'
-          memory_available_mb: '2650'
+          attempt: 2
+          cpu_percent: 12
+          memory_used_mb: 143
+          memory_available_mb: 2650
           thermal_state: nominal
-          low_power_mode: 'false'
+          low_power_mode: false
     Timestamp:
       type: string
       format: date-time

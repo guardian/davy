@@ -130,8 +130,8 @@ struct DebugEventItem: Identifiable {
         let text = searchText.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return true }
         let fields = [event.name, event.id.uuidString]
-            + event.info.flatMap { [$0.key, $0.value] }
-            + event.sessionInfo.flatMap { [$0.key, $0.value] }
+            + event.info.flatMap { [$0.key, $0.value.description] }
+            + event.sessionInfo.flatMap { [$0.key, $0.value.description] }
         return fields.contains { $0.localizedCaseInsensitiveContains(text) }
     }
 }
@@ -872,7 +872,7 @@ private struct DebugEventStatusText: View {
 }
 
 private struct DebugEventInfoSection: View {
-    let info: [String: String]
+    let info: [String: Davy.InfoValue]
 
     var body: some View {
         Section {
@@ -880,9 +880,9 @@ private struct DebugEventInfoSection: View {
                 Text(verbatim: "None")
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(info.sorted(by: <), id: \.key) { entry in
+                ForEach(info.sorted { $0.key < $1.key }, id: \.key) { entry in
                     LabeledContent(entry.key) {
-                        Text(entry.value)
+                        Text(entry.value.description)
                     }
                 }
             }
@@ -921,9 +921,9 @@ private struct DebugEventSessionSection: View {
                 Text(session.locale ?? "—")
             }
             if let info = session.info {
-                ForEach(info.sorted(by: <), id: \.key) { entry in
+                ForEach(info.sorted { $0.key < $1.key }, id: \.key) { entry in
                     LabeledContent(entry.key) {
-                        Text(entry.value)
+                        Text(entry.value.description)
                     }
                 }
             }

@@ -11,8 +11,11 @@ internal data class EventRecord(
     val id: UUID,
     val type: Type,
     val name: String,
-    /** Additional details. `null` when empty, so the field is omitted. */
-    val info: Map<String, String>?,
+    /**
+     * Additional details, as [String], [Long], [Double], or [Boolean] values. `null` when empty, so
+     * the field is omitted.
+     */
+    val info: Map<String, Any>?,
     /** When the event was logged, in milliseconds since 1970. */
     val timestampMillis: Long,
 ) {
@@ -29,7 +32,7 @@ internal data class EventRecord(
                 is Event.Error -> Type.ERROR
             },
             name = event.name,
-            info = event.info.takeIf { it.isNotEmpty() },
+            info = event.info.takeIf { it.isNotEmpty() }?.let(InfoValues::normalize),
             timestampMillis = timestampMillis,
         )
     }

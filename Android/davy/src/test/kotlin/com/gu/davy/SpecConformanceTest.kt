@@ -43,7 +43,7 @@ class SpecConformanceTest {
                 osVersion = Session.osVersion("15"),
                 deviceModel = "Pixel 9",
                 locale = Session.locale(Locale.Builder().setLanguage("es").setRegion("419").build()),
-                info = mapOf("edition" to "uk", "tier" to "supporter"),
+                info = mapOf("edition" to "uk", "tier" to "supporter", "beta" to true, "articles_read" to 17),
             ),
             Session(
                 id = UUID.randomUUID(),
@@ -63,7 +63,7 @@ class SpecConformanceTest {
             val telemetry = makeDavy(directory, transport, endpoint = endpoint.toString(), session = session)
 
             telemetry.log(Event.Breadcrumb("checkout_started"))
-            telemetry.log(Event.Breadcrumb("payment_selected", mapOf("payment_method" to "google_pay", "path" to "a/b+c &=?#", "note" to "café ☕️")))
+            telemetry.log(Event.Breadcrumb("payment_selected", mapOf("payment_method" to "google_pay", "path" to "a/b+c &=?#", "note" to "café ☕️", "attempt" to 2, "ratio" to 0.25, "cached" to true)))
             // Sent as is, since `onInvalidEventName` defaults to `SEND`.
             telemetry.log(Event.Breadcrumb("Checkout Started/Now"))
             telemetry.log(Event.Error("payment_declined", mapOf("reason" to "card_expired")))
@@ -183,7 +183,9 @@ class SpecConformanceTest {
             "empty name" to changingBody(batch) { it.getJSONArray("events").getJSONObject(0).put("name", "") },
             "missing session ID" to changingBody(batch) { it.getJSONObject("session").remove("id") },
             "extra session field" to changingBody(batch) { it.getJSONObject("session").put("deviceId", "123") },
-            "number in info" to changingBody(batch) { it.getJSONArray("events").getJSONObject(0).getJSONObject("info").put("cpu_percent", 3) },
+            "object in info" to changingBody(batch) {
+                it.getJSONArray("events").getJSONObject(0).getJSONObject("info").put("payment", JSONObject(mapOf("method" to "google_pay")))
+            },
             "no events" to changingBody(batch) { it.put("events", org.json.JSONArray()) },
             "missing sentAt in body" to changingBody(batch) { it.remove("sentAt") },
             "sentAt without milliseconds" to changingBody(batch) { it.put("sentAt", "2026-11-09T11:39:00Z") },

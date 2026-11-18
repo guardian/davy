@@ -119,9 +119,9 @@ public final class Davy: Sendable {
     ///
     /// The error's description isn't sent, since it can contain personal data. Any `error_type`
     /// already in `info` is replaced.
-    public func log(_ error: any Error, name: String, info: [String: String] = [:]) {
+    public func log(_ error: any Error, name: String, info: [String: InfoValue] = [:]) {
         var info = info
-        info["error_type"] = String(describing: type(of: error))
+        info["error_type"] = .string(String(describing: type(of: error)))
         log(.error(name, info: info))
     }
 
@@ -143,7 +143,7 @@ public final class Davy: Sendable {
 
     private func logDuration(_ name: String, since start: ContinuousClock.Instant) {
         let milliseconds = (ContinuousClock.now - start).timeInterval * 1000
-        log(.breadcrumb(name, info: ["duration_ms": String(Int(milliseconds.rounded()))]))
+        log(.breadcrumb(name, info: ["duration_ms": .int(Int(milliseconds.rounded()))]))
     }
 
     /// Applies ``DavyConfiguration/onInvalidEventName`` to `event`, returning the event to
@@ -160,7 +160,7 @@ public final class Davy: Sendable {
             logger.error("Discarded event \"\(event.name)\": name isn't lower snake case, for example \"checkout_started\".")
             return nil
         case .sendError:
-            return .error(Event.invalidNameErrorName, info: [Event.rejectedNameInfoKey: event.name])
+            return .error(Event.invalidNameErrorName, info: [Event.rejectedNameInfoKey: .string(event.name)])
         case .ignore:
             return nil
         case .send:
@@ -175,7 +175,7 @@ public final class Davy: Sendable {
     /// the `"session_updated"` breadcrumb and every event logged after this call carry the updated
     /// `session.info` (and each change starts a new batch). As with event `info`, don't include
     /// personal data or values that identify a person or device across sessions.
-    public func addSessionInfo(_ info: [String: String]) {
+    public func addSessionInfo(_ info: [String: InfoValue]) {
         let timestamp = Date.now
         let record = EventRecord(.breadcrumb(Event.sessionUpdatedName, info: info), timestamp: timestamp)
         commands.yield(.addSessionInfo(info, record))
@@ -193,7 +193,7 @@ public final class Davy: Sendable {
     /// extension, which isn't flushed automatically:
     ///
     /// ```swift
-    /// telemetry.log(.breadcrumb("push_received", info: ["push_id": pushID]))
+    /// telemetry.log(.breadcrumb("push_received", info: ["push_id": .string(pushID)]))
     /// await telemetry.flushAndWait()
     /// contentHandler(content)
     /// ```

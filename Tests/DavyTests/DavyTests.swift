@@ -7,6 +7,12 @@ private struct ReceivedPayload: Decodable {
     let events: [ReceivedEvent]
 }
 
+extension Davy.InfoValue {
+    var int: Int? {
+        if case let .int(value) = self { value } else { nil }
+    }
+}
+
 private struct ReceivedSession: Decodable {
     let id: UUID
     let environment: String?
@@ -16,18 +22,18 @@ private struct ReceivedSession: Decodable {
     let osVersion: String
     let deviceModel: String?
     let locale: String?
-    let info: [String: String]?
+    let info: [String: Davy.InfoValue]?
 }
 
 private struct ReceivedEvent: Decodable {
     let id: UUID
     let type: String
     let name: String
-    let info: [String: String]?
+    let info: [String: Davy.InfoValue]?
     let timestamp: String
 
     /// `info` without the diagnostics added to errors.
-    var loggedInfo: [String: String]? { info?.filter { !Diagnostics.keys.contains($0.key) } }
+    var loggedInfo: [String: Davy.InfoValue]? { info?.filter { !Diagnostics.keys.contains($0.key) } }
 }
 
 /// Records requests and answers each with the current status code and headers, after `delay`.
@@ -96,7 +102,7 @@ private func makeDavy(
     transport: MockTransport,
     endpoint: String = "https://example.com/events",
     environment: String? = nil,
-    info: [String: String] = [:],
+    info: [String: Davy.InfoValue] = [:],
     onInvalidEventName: DavyConfiguration.InvalidEventNameAction = .send,
     maxEventSize: Int = 4096,
     logsAppLifecycleEvents: Bool = false,
@@ -204,6 +210,46 @@ struct DavyTests {
         #expect(payloads[1].events[0].loggedInfo == ["edition": "au", "tier": "supporter"])
     }
 
+    @Test func infoValuesAreSentAsTheirJSONTypes() async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transport = MockTransport()
+        let telemetry = makeDavy(directory: directory, transport: transport, info: ["tier": "supporter", "beta": true])
+
+        let count = 3
+        telemetry.log(.breadcrumb("checkout_started", info: [
+            "method": "apple_pay",
+            "items": .int(count),
+            "attempt": 2,
+            "ratio": 0.25,
+            "cached": true,
+            "code": "404",
+            "infinite": .double(.infinity),
+            "missing": .double(.nan),
+        ]))
+        await telemetry.flushAndWait()
+
+        let events = await transport.sentEvents
+        #expect(events.first?.info == [
+            "method": "apple_pay",
+            "items": 3,
+            "attempt": 2,
+            "ratio": 0.25,
+            "cached": true,
+            "code": "404",
+            "infinite": "inf",
+            "missing": "nan",
+        ])
+        let payloads = await transport.payloads
+        #expect(payloads.first?.session.info == ["tier": "supporter", "beta": true])
+    }
+
+    @Test func infoStoredAsStringsByEarlierVersionsStillDecodes() throws {
+        let json = Data(#"{"count": "3", "cached": "true", "attempt": 2, "ratio": 0.5, "beta": false}"#.utf8)
+        let info = try DavyJSON.decoder.decode([String: Davy.InfoValue].self, from: json)
+        #expect(info == ["count": "3", "cached": "true", "attempt": 2, "ratio": 0.5, "beta": false])
+    }
+
     @Test func errorsHaveDiagnosticsAddedToInfoButBreadcrumbsDoNot() async throws {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -222,10 +268,10 @@ struct DavyTests {
         #expect(events.map(\.loggedInfo) == [nil, ["reason": "card_expired"], ["rejected_name": "checkoutStarted"]])
         for event in events.dropFirst() {
             let info = try #require(event.info)
-            #expect(try #require(info["cpu_percent"].flatMap(Int.init)) >= 0)
-            #expect(try #require(info["memory_used_mb"].flatMap(Int.init)) > 0)
-            #expect(["nominal", "fair", "serious", "critical"].contains(try #require(info["thermal_state"])))
-            #expect(info["low_power_mode"] == String(ProcessInfo.processInfo.isLowPowerModeEnabled))
+            #expect(try #require(info["cpu_percent"]?.int) >= 0)
+            #expect(try #require(info["memory_used_mb"]?.int) > 0)
+            #expect((["nominal", "fair", "serious", "critical"] as [Davy.InfoValue]).contains(try #require(info["thermal_state"])))
+            #expect(info["low_power_mode"] == .bool(ProcessInfo.processInfo.isLowPowerModeEnabled))
             #if os(macOS)
             #expect(info["memory_available_mb"] == nil)
             #endif
@@ -472,8 +518,8 @@ struct DavyTests {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
-        let fitting = Davy.Event.breadcrumb("checkout_started", info: ["note": String(repeating: "x", count: 1000)])
-        let tooLarge = Davy.Event.breadcrumb("checkout_started", info: ["note": String(repeating: "x", count: 1001)])
+        let fitting = Davy.Event.breadcrumb("checkout_started", info: ["note": .string(String(repeating: "x", count: 1000))])
+        let tooLarge = Davy.Event.breadcrumb("checkout_started", info: ["note": .string(String(repeating: "x", count: 1001))])
         // IDs and timestamps have a fixed length, so any record of `fitting` has this size.
         let builder = RequestBuilder(configuration: DavyConfiguration(endpoint: URL(string: "https://example.com/events")!))
         let size = try builder.size(of: EventRecord(fitting, timestamp: .now), in: Session.start(environment: nil))
@@ -490,12 +536,12 @@ struct DavyTests {
         #expect(events.map(\.type) == ["breadcrumb", "error", "error"])
         #expect(events.map(\.name) == ["checkout_started", "davy_event_too_large", "davy_event_too_large"])
         #expect(events[0].info == fitting.info)
-        #expect(events[1].info == ["rejected_name": "checkout_started", "size": String(size + 1)])
+        #expect(events[1].info == ["rejected_name": "checkout_started", "size": .int(size + 1)])
         // A replaced error keeps its diagnostics, but not the rest of its info.
         let replacedError = try #require(events[2].info)
         #expect(events[2].loggedInfo?.keys.sorted() == ["rejected_name", "size"])
         #expect(replacedError["rejected_name"] == "payment_declined")
-        #expect(replacedError["low_power_mode"] == String(ProcessInfo.processInfo.isLowPowerModeEnabled))
+        #expect(replacedError["low_power_mode"] == .bool(ProcessInfo.processInfo.isLowPowerModeEnabled))
     }
 
     @Test func retriedEventsKeepTheirID() async throws {
@@ -1055,7 +1101,7 @@ struct DavyTests {
         #expect(events.map(\.name) == ["sync_work", "failing_work", "async_work"])
         #expect(events.map(\.type) == ["breadcrumb", "breadcrumb", "breadcrumb"])
         for event in events {
-            let milliseconds = try #require(event.info?["duration_ms"].flatMap(Int.init))
+            let milliseconds = try #require(event.info?["duration_ms"]?.int)
             #expect(milliseconds >= 0)
         }
     }

@@ -20,7 +20,7 @@ public struct DavyConfiguration: Sendable {
     ///
     /// As with event ``Event/info``, don't include personal data or values that identify a person
     /// or device across sessions.
-    public var info: [String: String]
+    public var info: [String: Davy.InfoValue]
 
     /// What ``Davy/log(_:)`` does with an event whose name isn't lower snake case, such as
     /// `"checkoutStarted"` or `"checkout-started"` instead of `"checkout_started"`.
@@ -99,7 +99,7 @@ public struct DavyConfiguration: Sendable {
     public init(
         endpoint: URL,
         environment: String? = nil,
-        info: [String: String] = [:],
+        info: [String: Davy.InfoValue] = [:],
         onInvalidEventName: InvalidEventNameAction = .send,
         maxEventSize: Int = 4096,
         logsAppLifecycleEvents: Bool = false,

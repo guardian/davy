@@ -20,8 +20,8 @@ internal class DebugEventItem(val event: DavyDebugSnapshot.LoggedEvent, val stat
         val text = searchText.trim()
         if (text.isEmpty()) return true
         val fields = listOf(event.name, DavyJson.uuid(event.id)) +
-            event.info.flatMap { listOf(it.key, it.value) } +
-            event.sessionInfo.flatMap { listOf(it.key, it.value) }
+            event.info.flatMap { listOf(it.key, it.value.toString()) } +
+            event.sessionInfo.flatMap { listOf(it.key, it.value.toString()) }
         return fields.any { it.contains(text, ignoreCase = true) }
     }
 

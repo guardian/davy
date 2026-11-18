@@ -8,23 +8,25 @@ package com.gu.davy
  * example `checkout_started` or `payment_declined`. Don't include personal data or values that vary
  * per user.
  *
- * Use [info] for additional details, for example `mapOf("payment_method" to "google_pay")`. The
- * same rules apply: no personal data.
+ * Use [info] for additional details, for example
+ * `mapOf("payment_method" to "google_pay", "retries" to 2, "cached" to true)`. Values can be strings,
+ * numbers, or Booleans, and are sent as the matching JSON type; any other value is sent as its
+ * `toString()`. The same rules apply: no personal data.
  */
 public sealed class Event {
     public abstract val name: String
-    public abstract val info: Map<String, String>
+    public abstract val info: Map<String, Any>
 
     /** A step the user or app took, for example `checkout_started`. */
     public data class Breadcrumb(
         override val name: String,
-        override val info: Map<String, String> = emptyMap(),
+        override val info: Map<String, Any> = emptyMap(),
     ) : Event()
 
     /** The fact that an error occurred, for example `payment_declined`. */
     public data class Error(
         override val name: String,
-        override val info: Map<String, String> = emptyMap(),
+        override val info: Map<String, Any> = emptyMap(),
     ) : Event()
 
     internal companion object {
