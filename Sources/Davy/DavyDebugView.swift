@@ -938,20 +938,25 @@ private struct DebugEventJSONSection: View {
     let event: DavyDebugSnapshot.LoggedEvent
 
     var body: some View {
-        let json = event.prettyJSON
         Section {
-            Text(json)
-                .font(.caption.monospaced())
-                .textSelection(.enabled)
-            ShareLink(item: json) {
-                Label {
-                    Text(verbatim: "Share JSON")
-                } icon: {
-                    Image(systemName: "square.and.arrow.up")
+            if let json = event.exampleRequestJSON {
+                Text(json)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                ShareLink(item: json) {
+                    Label {
+                        Text(verbatim: "Share Example JSON")
+                    } icon: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
                 }
+            } else {
+                Text(verbatim: "Could not encode the example request.")
             }
         } header: {
-            Text(verbatim: "JSON")
+            Text(verbatim: "Example Request JSON")
+        } footer: {
+            Text(verbatim: "This example contains one event and uses its timestamp as sentAt. Open a request to see the actual batch.")
         }
     }
 }

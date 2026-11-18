@@ -611,6 +611,21 @@ struct DavyTests {
         #expect(try retryAfter([:]) == nil)
     }
 
+    @Test func `Event JSON example matches the single-event request body`() throws {
+        let endpoint = try #require(URL(string: "https://example.com/events"))
+        let builder = RequestBuilder(configuration: DavyConfiguration(endpoint: endpoint))
+        let session = Session.start(environment: "debug", info: ["edition": "uk"])
+        let record = EventRecord(.breadcrumb("content_viewed"), timestamp: .now)
+        let loggedEvent = DavyDebugSnapshot.LoggedEvent(record: record, session: session)
+        let example = try #require(loggedEvent.exampleRequestJSON)
+        let request = try builder.request(session: session, events: [record], sentAt: record.timestamp)
+        let body = try #require(request.httpBody)
+        let exampleObject = try #require(JSONSerialization.jsonObject(with: Data(example.utf8)) as? NSDictionary)
+        let bodyObject = try #require(JSONSerialization.jsonObject(with: body) as? NSDictionary)
+
+        #expect(exampleObject == bodyObject)
+    }
+
     @Test func debugSnapshotRecordsEachRequestWithItsResponse() async throws {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

@@ -79,7 +79,11 @@ public data class DavyDebugSnapshot(
         public val isError: Boolean get() = record.type == EventRecord.Type.ERROR
 
         /** The event and its session as indented JSON with sorted keys, the way they're stored on disk. */
-        internal val prettyJson: String get() = DavyJson.prettyPendingEvent(session, record)
+        internal val exampleRequestJson: String
+            get() {
+                val body = DavyJson.payload(session, listOf(record), sentAtMillis = timestampMillis)
+                return DavyJson.prettyJson(body) ?: body
+            }
 
         override fun equals(other: Any?): Boolean = other is LoggedEvent && record == other.record && session == other.session
 

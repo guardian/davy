@@ -149,48 +149,8 @@ internal object DavyJson {
         append('}')
     }
 
-    /** Like [pendingEvent], but indented with sorted keys, for showing events in [DavyDebugActivity]. */
-    fun prettyPendingEvent(session: Session, event: EventRecord): String = buildString {
-        val sessionFields = mapOf(
-            "id" to uuid(session.id),
-            "environment" to session.environment,
-            "appVersion" to session.appVersion,
-            "build" to session.build,
-            "os" to session.os,
-            "osVersion" to session.osVersion,
-            "deviceModel" to session.deviceModel,
-            "locale" to session.locale,
-            "info" to session.info?.takeIf { it.isNotEmpty() },
-        )
-        val eventFields = mapOf(
-            "id" to uuid(event.id),
-            "type" to event.type.wireName,
-            "name" to event.name,
-            "info" to event.info,
-            "timestamp" to timestamp(event.timestampMillis),
-        )
-        appendPretty(mapOf("session" to sessionFields, "event" to eventFields), indent = "")
-    }
-
-    /** [value], a string or an object of strings and objects, indented with sorted keys and omitting `null` values. */
-    private fun StringBuilder.appendPretty(value: Any, indent: String) {
-        if (value !is Map<*, *>) {
-            appendString(value.toString())
-            return
-        }
-        val fields = value.entries.filter { it.value != null }.sortedBy { it.key.toString() }
-        append('{')
-        fields.forEachIndexed { index, (key, field) ->
-            append(if (index == 0) "\n" else ",\n").append(indent).append("  ")
-            appendString(key.toString())
-            append(" : ")
-            appendPretty(field!!, "$indent  ")
-        }
-        append('\n').append(indent).append('}')
-    }
-
     /**
-     * [json], an object or array, indented with sorted keys like [prettyPendingEvent], for showing
+     * [json], an object or array, indented with sorted keys for showing
      * request bodies in [DavyDebugActivity]. `null` if it isn't valid JSON.
      */
     fun prettyJson(json: String): String? {

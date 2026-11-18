@@ -384,10 +384,11 @@ public class DavyDebugActivity : Activity() {
         content.addView(field("Locale", text(session.locale ?: "—")))
         session.info?.toSortedMap()?.forEach { (key, value) -> content.addView(field(key, text(value))) }
 
-        val json = event.prettyJson
-        content.addView(sectionHeader("JSON"))
+        val json = event.exampleRequestJson
+        content.addView(sectionHeader("Example Request JSON"))
         content.addView(text(json, size = 12f, monospace = true, selectable = true))
-        content.addView(shareButton("Share JSON", json))
+        content.addView(shareButton("Share Example JSON", json))
+        content.addView(caption("This example contains one event and uses its timestamp as sentAt. Open a request to see the actual batch."))
     }
 
     private fun showFailure(reason: String, dateMillis: Long) {

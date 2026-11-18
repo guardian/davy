@@ -307,7 +307,7 @@ class DavyDebugTest {
     }
 
     @Test
-    fun debugJsonIsIndentedWithSortedKeys() {
+    fun exampleRequestJsonMatchesTheWirePayload() {
         val session = Session(
             id = java.util.UUID.fromString("6F9619FF-8B86-D011-B42D-00C04FC964FF"),
             environment = null,
@@ -329,16 +329,19 @@ class DavyDebugTest {
         assertEquals(
             """
             {
-              "event" : {
-                "id" : "9C5B94B1-35AD-49BB-B118-8E8FC24ABF80",
-                "info" : {
-                  "attempt" : "2",
-                  "reason" : "card/expired"
-                },
-                "name" : "payment_declined",
-                "timestamp" : "2026-11-09T11:38:57.112Z",
-                "type" : "error"
-              },
+              "events" : [
+                {
+                  "id" : "9C5B94B1-35AD-49BB-B118-8E8FC24ABF80",
+                  "info" : {
+                    "attempt" : "2",
+                    "reason" : "card/expired"
+                  },
+                  "name" : "payment_declined",
+                  "timestamp" : "2026-11-09T11:38:57.112Z",
+                  "type" : "error"
+                }
+              ],
+              "sentAt" : "2026-11-09T11:38:57.112Z",
               "session" : {
                 "appVersion" : "1.2.0",
                 "id" : "6F9619FF-8B86-D011-B42D-00C04FC964FF",
@@ -348,7 +351,7 @@ class DavyDebugTest {
               }
             }
             """.trimIndent(),
-            DavyDebugSnapshot.LoggedEvent(event, session).prettyJson,
+            DavyDebugSnapshot.LoggedEvent(event, session).exampleRequestJson,
         )
     }
 }

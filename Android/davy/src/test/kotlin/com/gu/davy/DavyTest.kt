@@ -250,7 +250,8 @@ class DavyTest {
         val loggedAt = System.currentTimeMillis() - 60_000
         val oldDestination = RequestBuilder(DavyConfiguration(URI("https://example.com/old"))).destination
         val old = DavyJson.pendingEvent(session, EventRecord.from(Event.Breadcrumb("old"), loggedAt), oldDestination)
-        val legacy = DavyJson.prettyPendingEvent(session, EventRecord.from(Event.Breadcrumb("legacy"), loggedAt))
+        val legacy = JSONObject(DavyJson.pendingEvent(session, EventRecord.from(Event.Breadcrumb("legacy"), loggedAt), oldDestination))
+            .apply { remove("destination") }.toString()
         store.append(old.toByteArray(), loggedAt)
         store.append(legacy.toByteArray(), loggedAt)
 

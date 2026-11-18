@@ -118,11 +118,10 @@ extension DavyDebugSnapshot {
 
         var isError: Bool { record.type == .error }
 
-        /// The event and its session as indented JSON with sorted keys, the way they're stored on
-        /// disk.
-        var prettyJSON: String {
-            let pending = PendingEvent(session: session, event: record)
-            guard let data = try? DavyJSON.prettyEncoder.encode(pending) else { return "" }
+        /// A single-event request example, using the event timestamp as the sample send time.
+        var exampleRequestJSON: String? {
+            let payload = DavyPayload(sentAt: timestamp, session: session, events: [record])
+            guard let data = try? DavyJSON.prettyEncoder.encode(payload) else { return nil }
             return String(decoding: data, as: UTF8.self)
         }
     }
