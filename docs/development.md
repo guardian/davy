@@ -101,7 +101,7 @@ docker run --rm -p 8080:8080 -v "$PWD/Spec:/app/Spec:ro" davy-test-server
 
 The container reads the repository's `Spec` folder, so after changing the spec, restart the server rather than rebuilding it.
 
-Then open http://localhost:8080 and set the app's `endpoint` to the server. The example apps' debug builds already use it.
+Then open http://localhost:8080 and set the app's `endpoint` to the server. The example apps' debug builds already use it, and the Android example's debug builds run `adb reverse` for you.
 
 | App running on | Endpoint |
 | --- | --- |

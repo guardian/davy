@@ -26,8 +26,8 @@ class ExampleApplication : Application() {
      */
     private fun configuration() = DavyConfiguration(
         // Debug builds send to the test server in `TestServer/`, running on this computer; see
-        // docs/development.md. Run `adb reverse tcp:8080 tcp:8080` first, so the emulator or
-        // device reaches it at localhost.
+        // docs/development.md. The emulator or device reaches it at localhost through
+        // `adb reverse tcp:8080 tcp:8080`, which debug builds of this app run for you.
         endpoint = if (BuildConfig.DEBUG) {
             URI("http://localhost:8080/events")
         } else {

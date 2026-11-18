@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Allows plain HTTP to the test server in `TestServer/` only, which debug builds reach at
-     localhost after `adb reverse tcp:8080 tcp:8080`. -->
+     localhost through `adb reverse tcp:8080 tcp:8080`, which the build runs for you. -->
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">localhost</domain>
