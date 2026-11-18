@@ -134,10 +134,32 @@ internal class OpenApiSpec(private val document: Json) {
         }
         val path = urlPath.removePrefix(serverPath)
         val pathItem = document["paths"]?.get(path) ?: return listOf("No path in the spec matches $path")
-        val method = request.method.lowercase()
-        val operation = pathItem[method] ?: return listOf("$path has no ${method.uppercase()} operation")
+        val operation = pathItem["post"] ?: return listOf("$path has no POST operation")
         val queryViolations = if (url.rawQuery.isNullOrEmpty()) emptyList() else listOf("The spec defines no query parameters for $path")
-        return queryViolations + bodyViolations(request, operation)
+        return queryViolations + parameterViolations(request, operation) + bodyViolations(request, operation)
+    }
+
+    private fun parameterViolations(request: HttpRequest, operation: Json): List<String> {
+        val violations = mutableListOf<String>()
+        for (entry in operation["parameters"]?.array.orEmpty()) {
+            val parameter = resolve(entry)
+            val name = parameter?.get("name")?.string
+            if (parameter?.get("in") != Json.Str("header") || name == null) {
+                violations += "The spec uses a parameter OpenApiSpec doesn't support: $entry"
+                continue
+            }
+            val value = request.headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
+            if (value == null) {
+                if (parameter["required"] == Json.Bool(true)) {
+                    violations += "The request is missing the required header $name"
+                }
+                continue
+            }
+            parameter["schema"]?.let {
+                violations += schemaViolations(Json.Str(value), it, "header $name")
+            }
+        }
+        return violations
     }
 
     private fun bodyViolations(request: HttpRequest, operation: Json): List<String> {

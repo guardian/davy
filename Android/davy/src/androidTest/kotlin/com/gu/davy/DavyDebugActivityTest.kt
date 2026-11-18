@@ -74,11 +74,11 @@ class DavyDebugActivityTest {
 
             // The event lists the requests that included it; select one to see the request.
             assertTrue(detailTexts.toString(), "REQUESTS" in detailTexts)
-            val request = select(detail, "POST /events")
+            val request = select(detail, "2 events")
             activities += request
             assertTrue(waitUntil { onMain { "BODY" in texts(request.window.decorView) } })
             val requestTexts = onMain { texts(request.window.decorView) }
-            assertEquals("POST /events", onMain { request.title.toString() })
+            assertEquals("Request", onMain { request.title.toString() })
             assertTrue(requestTexts.toString(), "No response" in requestTexts)
             assertTrue(requestTexts.toString(), "Failed" in requestTexts)
             assertTrue(requestTexts.toString(), "REASON" in requestTexts)
@@ -86,7 +86,7 @@ class DavyDebugActivityTest {
             assertTrue(requestTexts.toString(), "Content-Type: application/json" in requestTexts)
             assertTrue(requestTexts.toString(), requestTexts.any { "\"name\" : \"payment_declined\"" in it })
 
-            // The list of requests is searched by URL and body.
+            // The list of requests is searched by body.
             assertTrue(onMain { texts(list.window.decorView) }.any { it.startsWith("REQUESTS (") })
             val requests = select(list, "Show Requests")
             activities += requests

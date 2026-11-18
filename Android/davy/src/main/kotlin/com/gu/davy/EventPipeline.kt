@@ -265,8 +265,6 @@ internal class EventPipeline(
 
         val record = DavyDebugSnapshot.Request(
             id = UUID.randomUUID(),
-            method = request.method,
-            url = request.url,
             headers = request.headers.toMap(),
             body = request.body.decodeToString(),
             eventIds = delivery.events.map { it.id },

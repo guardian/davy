@@ -12,8 +12,9 @@ info:
 
     Rules this document can't express:
 
-    - Every request includes the headers in `DavyConfiguration.headers`. Requests never send
-      cookies or use a local cache.
+    - Every request includes the headers in `DavyConfiguration.headers`, except `Content-Type`,
+      `User-Agent`, and `Accept-Language`, which Davy always sets. Requests never send cookies or
+      use a local cache.
     - Each event, measured as the UTF-8 byte length of a single-event JSON request body with the
       session data, is at most `maxEventSize` bytes (default 4,096). A larger event is replaced
       with the error `davy_event_too_large`.
@@ -45,6 +46,24 @@ paths:
         Sent to the endpoint itself, without adding a trailing slash. Contains between 1 and
         `batchSize` (default 100) events, oldest first, all logged in the same session. One request
         is in flight at a time.
+      parameters:
+        - name: User-Agent
+          in: header
+          required: true
+          description: |
+            Always `Davy`, never the system's default `User-Agent`, which would name the OS build or
+            device model.
+          schema:
+            type: string
+            const: Davy
+        - name: Accept-Language
+          in: header
+          required: true
+          description: |
+            Always `*`, never the user's preferred languages, which would fingerprint the device.
+          schema:
+            type: string
+            const: '*'
       requestBody:
         required: true
         content:

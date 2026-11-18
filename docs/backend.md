@@ -18,7 +18,7 @@ Your endpoint should:
 
 ## Request format
 
-Events are sent as a `POST` to the endpoint with `Content-Type: application/json` and any headers in `headers`. Requests never use cookies or the local cache.
+Events are sent as a `POST` to the endpoint with `Content-Type: application/json`, `User-Agent: Davy`, `Accept-Language: *`, and any other headers in `headers`. Requests never use cookies or the local cache.
 
 Each request contains between 1 and `batchSize` events from a single session, along with common app and device data captured when that session started:
 

@@ -12,7 +12,7 @@ import SwiftUI
 /// how the server responded, including requests that failed.
 ///
 /// Select an event to see everything it's sent with, including its JSON and the requests it was
-/// in. Select a request to see its URL, headers, body, and response. The toolbar sends pending
+/// in. Select a request to see its events, headers, body, and response. The toolbar sends pending
 /// events now and clears the sent history and requests. If sending fails, the reason is shown at
 /// the top of each page.
 ///
@@ -179,13 +179,17 @@ enum DebugEventFilter: String, CaseIterable, Identifiable {
 }
 
 extension DavyDebugSnapshot.Request {
-    /// Whether the URL, percent-decoded, or the body contains `searchText`, ignoring case and
-    /// surrounding spaces. Empty text matches every request.
+    /// Whether the body contains `searchText`, ignoring case and surrounding spaces. Empty text
+    /// matches every request.
     func matches(searchText: String) -> Bool {
         let text = searchText.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return true }
-        let url = url.absoluteString.removingPercentEncoding ?? url.absoluteString
-        return [url, body].contains { $0.localizedCaseInsensitiveContains(text) }
+        return body.localizedCaseInsensitiveContains(text)
+    }
+
+    /// How many events the request carried, for example `1 event` or `3 events`.
+    var eventCountTitle: String {
+        eventIDs.count == 1 ? "1 event" : "\(eventIDs.count) events"
     }
 
     /// `HTTP 200`, or `No response` if none was received.
@@ -284,7 +288,7 @@ private struct DebugEventsScreen: View {
         // On every page, so the layout doesn't move when switching between them.
         .searchable(
             text: $searchText,
-            prompt: Text(verbatim: selection == .requests ? "URL or body" : "Name, info, or ID")
+            prompt: Text(verbatim: selection == .requests ? "Body" : "Name, info, or ID")
         )
         .onChange(of: searchText) { _, text in
             if !text.isEmpty && selection == .overview {
@@ -1018,15 +1022,12 @@ private struct DebugRequestRow: View {
                 .foregroundStyle(request.outcome.color)
                 .accessibilityLabel(Text(verbatim: request.outcome.title))
             VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: "\(request.method) \(request.url.path(percentEncoded: false))")
-                    .font(.body.monospaced())
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                Text(verbatim: request.eventCountTitle)
+                    .font(.body)
                 HStack(spacing: 8) {
                     Text(request.sentAt, format: .debugTime)
                     Text(verbatim: request.statusTitle)
                         .foregroundStyle(request.outcome == .delivered ? Color.secondary : request.outcome.color)
-                    Text(verbatim: request.eventIDs.count == 1 ? "1 event" : "\(request.eventIDs.count) events")
                     Text(verbatim: request.durationTitle)
                 }
                 .font(.caption)
@@ -1055,14 +1056,6 @@ private struct DebugRequestDetail: View {
         let body = request.prettyBody
         Form {
             Section {
-                DebugField("Method") {
-                    Text(request.method)
-                        .monospaced()
-                }
-                DebugField("URL") {
-                    Text(request.url.absoluteString)
-                        .font(.caption.monospaced())
-                }
                 DebugField("Sent") {
                     Text(request.sentAt, format: .dateTime.year().month().day().hour().minute().second().secondFraction(.fractional(3)))
                 }

@@ -1,8 +1,5 @@
 package com.gu.davy
 
-import java.net.URI
-import java.net.URISyntaxException
-import java.net.URLDecoder
 import java.util.UUID
 import kotlin.math.ceil
 
@@ -14,25 +11,14 @@ internal fun DavyDebugSnapshot.requestsContaining(eventId: UUID): List<DavyDebug
     requestsNewestFirst().filter { eventId in it.eventIds }
 
 /**
- * Whether the request's percent-decoded URL or its body contains [searchText], ignoring case and
- * surrounding spaces. Empty text matches every request.
+ * Whether the request's body contains [searchText], ignoring case and surrounding spaces. Empty
+ * text matches every request.
  */
 internal fun DavyDebugSnapshot.Request.matches(searchText: String): Boolean {
     val text = searchText.trim()
     if (text.isEmpty()) return true
-    return percentDecoded(url).contains(text, ignoreCase = true) || body.contains(text, ignoreCase = true)
+    return body.contains(text, ignoreCase = true)
 }
-
-/** The method and the URL's path, for example `POST /events`. */
-internal val DavyDebugSnapshot.Request.methodAndPath: String
-    get() {
-        val path = try {
-            URI(url).path
-        } catch (_: URISyntaxException) {
-            null
-        }
-        return "$method ${path?.takeIf { it.isNotEmpty() } ?: "/"}"
-    }
 
 /** The response's status code, for example `HTTP 200`, or `No response`. */
 internal val DavyDebugSnapshot.Request.statusTitle: String
@@ -54,10 +40,3 @@ internal val DavyDebugSnapshot.Request.Outcome.description: String
         is DavyDebugSnapshot.Request.Outcome.Throttled -> "Throttled: retry after ${ceil(retryAfterSeconds).toLong()} s"
         is DavyDebugSnapshot.Request.Outcome.Failed -> "Failed"
     }
-
-/** [value] with percent-encoded bytes decoded as UTF-8, or unchanged if they're malformed. A `+` stays a `+`. */
-private fun percentDecoded(value: String): String = try {
-    URLDecoder.decode(value.replace("+", "%2B"), "UTF-8")
-} catch (_: IllegalArgumentException) {
-    value
-}

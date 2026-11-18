@@ -15,11 +15,16 @@ struct RequestBuilder: Sendable {
     func request(session: Session, events: [EventRecord], sentAt: Date) throws -> URLRequest {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try DavyJSON.encoder.encode(DavyPayload(sentAt: sentAt, session: session, events: events))
         for (field, value) in headers {
             request.setValue(value, forHTTPHeaderField: field)
         }
+        for field in ["Content-Type", "User-Agent", "Accept-Language"] {
+            request.setValue(nil, forHTTPHeaderField: field)
+        }
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Davy", forHTTPHeaderField: "User-Agent")
+        request.setValue("*", forHTTPHeaderField: "Accept-Language")
+        request.httpBody = try DavyJSON.encoder.encode(DavyPayload(sentAt: sentAt, session: session, events: events))
         return request
     }
 

@@ -49,7 +49,7 @@ import kotlin.math.roundToInt
  * of it.
  *
  * Select Requests to list the requests that finished, most recent first, with a mark showing how
- * the server responded to each. Select a request to see its URL, headers, body, and events. An
+ * the server responded to each. Select a request to see its events, headers, body, and response. An
  * event's details list the requests that included it.
  *
  * Start it from a debug menu:
@@ -72,7 +72,7 @@ public class DavyDebugActivity : Activity() {
     private var render: (DavyDebugSnapshot) -> Unit = {}
     private var clearItem: MenuItem? = null
 
-    /** Text that listed events' names, `info`, or IDs, or listed requests' URLs or bodies, must contain. */
+    /** Text that listed events' names, `info`, or IDs, or listed requests' bodies, must contain. */
     internal var searchText: String = ""
         set(value) {
             field = value
@@ -136,7 +136,7 @@ public class DavyDebugActivity : Activity() {
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         if (telemetry == null || listOf(EXTRA_EVENT_ID, EXTRA_REQUEST_ID, EXTRA_FAILURE_REASON).any(intent::hasExtra)) return false
         val search = SearchView(actionBar?.themedContext ?: this).apply {
-            queryHint = if (showsRequests) "URL or body" else "Name, info, or ID"
+            queryHint = if (showsRequests) "Body" else "Name, info, or ID"
             setOnQueryTextListener(
                 object : SearchView.OnQueryTextListener {
                     override fun onQueryTextChange(newText: String): Boolean {
@@ -442,6 +442,7 @@ public class DavyDebugActivity : Activity() {
     }
 
     private fun showRequest(id: UUID) {
+        title = "Request"
         val content = vertical()
         setContentView(ScrollView(this).apply {
             fitsSystemWindows = true
@@ -462,10 +463,8 @@ public class DavyDebugActivity : Activity() {
                 shownState = state
                 content.removeAllViews()
                 if (shown == null) {
-                    title = "Request"
                     content.addView(caption("This request is no longer listed."))
                 } else {
-                    title = shown.methodAndPath
                     addRequestDetail(content, shown, events)
                 }
             }
@@ -475,8 +474,6 @@ public class DavyDebugActivity : Activity() {
     /** [request]'s details, with [events], the request's events in order, or `null` for any no longer listed. */
     private fun addRequestDetail(content: LinearLayout, request: DavyDebugSnapshot.Request, events: List<DebugEventItem?>) {
         content.addView(sectionHeader("Summary"))
-        content.addView(field("Method", monospace(request.method)))
-        content.addView(field("URL", monospace(request.url)))
         content.addView(field("Sent At", text(FULL_TIME.get()!!.format(Date(request.sentAtMillis)))))
         content.addView(field("Duration", text("${request.durationMillis} ms")))
         content.addView(field("Status Code", text(request.statusCode?.toString() ?: "No response")))
@@ -589,7 +586,7 @@ public class DavyDebugActivity : Activity() {
         views.mark.text = symbol
         views.mark.setTextColor(color)
         views.mark.contentDescription = description
-        views.name.text = request.methodAndPath
+        views.name.text = request.eventCountTitle
         views.details.text = SpannableStringBuilder().apply {
             if (request.outcome == DavyDebugSnapshot.Request.Outcome.Delivered) {
                 append(request.statusTitle)
@@ -597,7 +594,6 @@ public class DavyDebugActivity : Activity() {
                 append(request.statusTitle, ForegroundColorSpan(color), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
             append("  ").append(time(request.sentAtMillis))
-            append("  ").append(request.eventCountTitle)
             append("  ").append("${request.durationMillis} ms")
         }
     }

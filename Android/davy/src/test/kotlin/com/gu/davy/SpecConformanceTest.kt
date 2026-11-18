@@ -27,7 +27,7 @@ class SpecConformanceTest {
     }
 
     private fun assertConforms(requests: List<HttpRequest>) {
-        val violations = requests.flatMap { request -> spec.violations(request).map { "${request.method} ${request.url}: $it" } }
+        val violations = requests.flatMap { request -> spec.violations(request).map { "POST ${request.url}: $it" } }
         assertTrue(violations.joinToString("\n"), violations.isEmpty())
     }
 
@@ -108,7 +108,7 @@ class SpecConformanceTest {
             val request = builder.request(session, events, DavyJson.parseTimestamp(fixture.getString("sentAt")))
             val expected = fixture.getJSONObject("expected")
 
-            assertEquals(name, expected.getString("method"), request.method)
+            assertEquals(name, "POST", expected.getString("method"))
             assertEquals(name, expected.getString("url"), request.url)
             assertEquals(
                 name,
@@ -187,7 +187,9 @@ class SpecConformanceTest {
             "no events" to changingBody(batch) { it.put("events", org.json.JSONArray()) },
             "missing sentAt in body" to changingBody(batch) { it.remove("sentAt") },
             "sentAt without milliseconds" to changingBody(batch) { it.put("sentAt", "2026-11-09T11:39:00Z") },
-            "query string on batch endpoint" to HttpRequest(batch.method, "${batch.url}?key=123", batch.headers, batch.body),
+            "query string on batch endpoint" to HttpRequest("${batch.url}?key=123", batch.headers, batch.body),
+            "wrong User-Agent" to HttpRequest(batch.url, batch.headers + ("User-Agent" to "Dalvik/2.1.0"), batch.body),
+            "wrong Accept-Language" to HttpRequest(batch.url, batch.headers + ("Accept-Language" to "en-GB"), batch.body),
         )
         val missed = breakages.filter { (_, request) -> spec.violations(request).isEmpty() }.keys
         assertTrue("Not caught: $missed", missed.isEmpty())
@@ -196,6 +198,6 @@ class SpecConformanceTest {
     /** [request] with its JSON body changed by [change]. */
     private fun changingBody(request: HttpRequest, change: (JSONObject) -> Unit): HttpRequest {
         val payload = JSONObject(request.body.decodeToString()).also(change)
-        return HttpRequest(request.method, request.url, request.headers, payload.toString().toByteArray())
+        return HttpRequest(request.url, request.headers, payload.toString().toByteArray())
     }
 }

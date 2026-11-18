@@ -45,6 +45,8 @@ describe("inspectRequest", () => {
     }));
     const { problems } = inspectRequest(spec, "POST", "/events", [], body)!;
     assertProblem(problems, 'The Content-Type is ""');
+    assertProblem(problems, 'The User-Agent is ""');
+    assertProblem(problems, 'The Accept-Language is ""');
     assertProblem(problems, "body.session.id doesn't match");
     assertProblem(problems, "body.events[0].type isn't one of");
     assertProblem(problems, "body.events[0] has a property that isn't in the spec: extra");

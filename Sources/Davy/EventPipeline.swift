@@ -331,8 +331,6 @@ actor EventPipeline {
         let (outcome, statusCode) = await transport.deliver(request)
         let sent = DavyDebugSnapshot.Request(
             id: UUID(),
-            method: request.httpMethod ?? "POST",
-            url: request.url ?? requestBuilder.endpoint,
             headers: request.allHTTPHeaderFields ?? [:],
             body: request.httpBody.map { String(decoding: $0, as: UTF8.self) } ?? "",
             eventIDs: delivery.events.map(\.id),

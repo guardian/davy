@@ -46,6 +46,7 @@ public struct DavyConfiguration: Sendable {
     public var logsAppLifecycleEvents: Bool
 
     /// Additional HTTP header fields sent with every request, for example an `Authorization` header.
+    /// `Content-Type`, `User-Agent`, and `Accept-Language` are always set by Davy.
     public var headers: [String: String]
 
     /// The number of pending events that triggers an immediate send, and the maximum number of

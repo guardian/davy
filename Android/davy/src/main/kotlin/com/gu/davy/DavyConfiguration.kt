@@ -32,7 +32,8 @@ import kotlin.time.Duration.Companion.seconds
  *   logged as `app_foregrounded`, so every `app_foregrounded` follows an `app_backgrounded` in the
  *   same session.
  * @property headers Additional HTTP header fields sent with every request, for example an
- *   `Authorization` header.
+ *   `Authorization` header. `Content-Type`, `User-Agent`, and `Accept-Language` are always set by
+ *   Davy.
  * @property batchSize The number of pending events that triggers an immediate send, and the
  *   maximum number of events in a single request. Values below 1 are treated as 1. To send each
  *   event as soon as it's logged, set it to 1.

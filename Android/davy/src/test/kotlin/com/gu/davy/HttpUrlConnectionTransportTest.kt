@@ -73,11 +73,21 @@ class HttpUrlConnectionTransportTest {
     @Test
     fun sendsTheMethodHeadersAndBodyAndReadsTheResponse() {
         val server = server("HTTP/1.1 429 Too Many Requests\r\nRetry-After: 120\r\nContent-Length: 4\r\nConnection: close\r\n\r\nslow")
-        val body = """{"session":{},"events":[]}""".toByteArray()
+        val session = Session(java.util.UUID.randomUUID(), null, null, null, Session.OS, "15.0.0", null, null)
+        val event = EventRecord.from(Event.Breadcrumb("checkout_started"), timestampMillis = 1_700_000_000_000)
+        val request = RequestBuilder(
+            DavyConfiguration(
+                endpoint = java.net.URI("${server.url}/events"),
+                headers = mapOf(
+                    "X-Api-Key" to "secret",
+                    "user-agent" to "Custom/1.0",
+                    "accept-language" to "en-GB",
+                    "content-type" to "text/plain",
+                ),
+            ),
+        ).request(session, listOf(event), sentAtMillis = 1_700_000_005_000)
 
-        val response = HttpUrlConnectionTransport().send(
-            HttpRequest("POST", "${server.url}/events", mapOf("Content-Type" to "application/json", "Authorization" to "Bearer token"), body),
-        )
+        val response = HttpUrlConnectionTransport().send(request)
 
         assertEquals(429, response.statusCode)
         assertEquals("120", response.header("retry-after"))
@@ -85,15 +95,17 @@ class HttpUrlConnectionTransportTest {
         val received = server.received.poll(5, TimeUnit.SECONDS)!!
         assertEquals("POST /events HTTP/1.1", received.requestLine)
         assertEquals("application/json", received.headers["content-type"])
-        assertEquals("Bearer token", received.headers["authorization"])
-        assertArrayEquals(body, received.body)
+        assertEquals("Davy", received.headers["user-agent"])
+        assertEquals("*", received.headers["accept-language"])
+        assertEquals("secret", received.headers["x-api-key"])
+        assertArrayEquals(request.body, received.body)
     }
 
     @Test
     fun noResponseIsAFailure() {
         val port = ServerSocket(0).use { it.localPort }
 
-        val result = HttpUrlConnectionTransport().deliver(HttpRequest("POST", "http://127.0.0.1:$port/events", emptyMap(), ByteArray(0)))
+        val result = HttpUrlConnectionTransport().deliver(HttpRequest("http://127.0.0.1:$port/events", emptyMap(), ByteArray(0)))
 
         assertNull(result.statusCode)
         assertTrue(result.outcome.toString(), result.outcome is DeliveryOutcome.Failed)

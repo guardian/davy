@@ -140,7 +140,29 @@ struct OpenAPISpec {
             return ["\(path) has no \(method.uppercased()) operation"]
         }
         let queryViolations = components.percentEncodedQuery == nil ? [] : ["The request has a query string, which the spec doesn't allow"]
-        return queryViolations + bodyViolations(of: request, operation: operation)
+        return queryViolations + parameterViolations(of: request, operation: operation) + bodyViolations(of: request, operation: operation)
+    }
+
+    private func parameterViolations(of request: URLRequest, operation: JSONValue) -> [String] {
+        var violations: [String] = []
+        for entry in operation["parameters"]?.array ?? [] {
+            guard let parameter = resolve(entry),
+                  parameter["in"] == .string("header"),
+                  let name = parameter["name"]?.string else {
+                violations.append("The spec uses a parameter OpenAPISpec doesn't support: \(entry)")
+                continue
+            }
+            guard let value = request.value(forHTTPHeaderField: name) else {
+                if parameter["required"] == .bool(true) {
+                    violations.append("The request is missing the required header \(name)")
+                }
+                continue
+            }
+            if let schema = parameter["schema"] {
+                violations += schemaViolations(of: .string(value), against: schema, at: "header \(name)")
+            }
+        }
+        return violations
     }
 
     private func bodyViolations(of request: URLRequest, operation: JSONValue) -> [String] {

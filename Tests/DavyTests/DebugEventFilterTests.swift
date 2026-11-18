@@ -87,12 +87,9 @@ struct DebugEventFilterTests {
         #expect(DebugEventFilter.sent.noMatchesDescription(searchText: "refund") == "No events match the search and filter.")
     }
 
-    @Test func requestSearchMatchesTheDecodedURLOrBodyIgnoringCase() throws {
-        let first = request(
-            url: "https://api.example.com/events?step=%22Cart%22",
-            body: #"{"events":[{"name":"checkout_started"}]}"#
-        )
-        let second = request(url: "https://api.example.com/events", body: #"{"events":[{"name":"payment_declined"}]}"#)
+    @Test func requestSearchMatchesTheBodyIgnoringCase() throws {
+        let first = request(body: #"{"events":[{"name":"checkout_started","info":{"step":"Cart"}}]}"#)
+        let second = request(body: #"{"events":[{"name":"payment_declined"}]}"#)
 
         let matching = { (text: String) in [first, second].filter { $0.matches(searchText: text) }.map(\.body) }
         #expect(matching("  ") == [first.body, second.body])
@@ -102,7 +99,7 @@ struct DebugEventFilterTests {
     }
 
     @Test func requestBodiesAreShownIndentedWithSortedKeys() {
-        let json = request(url: "https://api.example.com/events", body: #"{"session":{"id":"a/b"},"name":"x"}"#)
+        let json = request(body: #"{"session":{"id":"a/b"},"name":"x"}"#)
         #expect(json.prettyBody == """
             {
               "name" : "x",
@@ -111,20 +108,20 @@ struct DebugEventFilterTests {
               }
             }
             """)
-        #expect(request(url: "https://api.example.com/events", body: "not json").prettyBody == "not json")
-        #expect(request(url: "https://api.example.com/events", body: "{}", statusCode: nil).statusTitle == "No response")
+        #expect(request(body: "not json").prettyBody == "not json")
+        #expect(request(body: "{}", statusCode: nil).statusTitle == "No response")
         #expect(json.statusTitle == "HTTP 200")
+        #expect(json.eventCountTitle == "1 event")
+        #expect(request(body: "{}", eventCount: 3).eventCountTitle == "3 events")
     }
 }
 
-private func request(url: String, body: String, statusCode: Int? = 200) -> DavyDebugSnapshot.Request {
+private func request(body: String, eventCount: Int = 1, statusCode: Int? = 200) -> DavyDebugSnapshot.Request {
     DavyDebugSnapshot.Request(
         id: UUID(),
-        method: "POST",
-        url: URL(string: url)!,
         headers: [:],
         body: body,
-        eventIDs: [UUID()],
+        eventIDs: (0..<eventCount).map { _ in UUID() },
         sentAt: Date(timeIntervalSince1970: 1),
         duration: 0.1,
         statusCode: statusCode,

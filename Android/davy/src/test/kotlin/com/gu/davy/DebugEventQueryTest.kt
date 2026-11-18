@@ -38,12 +38,11 @@ class DebugEventQueryTest {
         DebugEventItem.all(snapshot).filter { filter.includes(it) && it.matches(searchText) }.map { it.event.name }
 
     private fun request(
-        url: String,
         body: String = "{}",
         eventIds: List<UUID> = listOf(UUID.randomUUID()),
         statusCode: Int? = 200,
         outcome: DavyDebugSnapshot.Request.Outcome = DavyDebugSnapshot.Request.Outcome.Delivered,
-    ) = DavyDebugSnapshot.Request(UUID.randomUUID(), "POST", url, emptyMap(), body, eventIds, 1_000, 20, statusCode, outcome)
+    ) = DavyDebugSnapshot.Request(UUID.randomUUID(), emptyMap(), body, eventIds, 1_000, 20, statusCode, outcome)
 
     @Test
     fun eventsAreListedOnceMostRecentlyLoggedFirst() {
@@ -89,9 +88,9 @@ class DebugEventQueryTest {
 
     @Test
     fun requestsAreListedMostRecentlyFinishedFirstAndFoundByTheirEvents() {
-        val failed = request("https://example.com/events", eventIds = listOf(pending.id, delivered.id), statusCode = 500)
-        val retried = request("https://example.com/events", eventIds = listOf(delivered.id))
-        val other = request("https://example.com/events", eventIds = listOf(rejected.id), statusCode = 400)
+        val failed = request(eventIds = listOf(pending.id, delivered.id), statusCode = 500)
+        val retried = request(eventIds = listOf(delivered.id))
+        val other = request(eventIds = listOf(rejected.id), statusCode = 400)
         val withRequests = snapshot.copy(requests = listOf(failed, retried, other))
 
         assertEquals(listOf(other, retried, failed), withRequests.requestsNewestFirst())
@@ -100,27 +99,24 @@ class DebugEventQueryTest {
     }
 
     @Test
-    fun requestSearchMatchesTheDecodedUrlOrBodyIgnoringCase() {
-        val withQuery = request("https://example.com/events?env=Caf%C3%A9+1", body = """{"events":[{"name":"checkout_started"}]}""")
-        val batch = request("https://example.com/events", body = """{"events":[{"name":"payment_declined"}]}""")
-        fun matching(searchText: String) = listOf(withQuery, batch).filter { it.matches(searchText) }
+    fun requestSearchMatchesTheBodyIgnoringCase() {
+        val first = request(body = """{"events":[{"name":"checkout_started","info":{"step":"Cart"}}]}""")
+        val second = request(body = """{"events":[{"name":"payment_declined"}]}""")
+        fun matching(searchText: String) = listOf(first, second).filter { it.matches(searchText) }
 
-        assertEquals(listOf(withQuery, batch), matching("  "))
-        assertEquals(listOf(withQuery), matching(" ENV=café+1 "))
-        assertEquals(listOf(batch), matching("Payment_Declined"))
-        assertEquals(listOf(withQuery, batch), matching("example.com/events"))
+        assertEquals(listOf(first, second), matching("  "))
+        assertEquals(listOf(first), matching(" \"cart\" "))
+        assertEquals(listOf(second), matching("Payment_Declined"))
         assertEquals(emptyList<DavyDebugSnapshot.Request>(), matching("refund"))
     }
 
     @Test
-    fun requestsAreDescribedByPathStatusEventsAndOutcome() {
-        val unanswered = request("https://example.com/v1/events", body = "{}", statusCode = null)
-        assertEquals("POST /v1/events", unanswered.methodAndPath)
+    fun requestsAreDescribedByStatusEventsAndOutcome() {
+        val unanswered = request(body = "{}", statusCode = null)
         assertEquals("No response", unanswered.statusTitle)
         assertEquals("1 event", unanswered.eventCountTitle)
 
-        val delivered = request("https://example.com", eventIds = List(3) { UUID.randomUUID() })
-        assertEquals("POST /", delivered.methodAndPath)
+        val delivered = request(eventIds = List(3) { UUID.randomUUID() })
         assertEquals("HTTP 200", delivered.statusTitle)
         assertEquals("3 events", delivered.eventCountTitle)
 
@@ -158,9 +154,9 @@ class DebugEventQueryTest {
               "valid" : true
             }
             """.trimIndent(),
-            request("https://example.com/events", body = body).prettyBody,
+            request(body = body).prettyBody,
         )
-        assertEquals("not json", request("https://example.com/events", body = "not json").prettyBody)
-        assertEquals("{} {}", request("https://example.com/events", body = "{} {}").prettyBody)
+        assertEquals("not json", request(body = "not json").prettyBody)
+        assertEquals("{} {}", request(body = "{} {}").prettyBody)
     }
 }

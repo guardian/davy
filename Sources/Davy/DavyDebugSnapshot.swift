@@ -174,10 +174,6 @@ extension DavyDebugSnapshot {
 
         /// A random identifier for the request.
         public let id: UUID
-        /// The HTTP method, `POST`.
-        public let method: String
-        /// The full URL, including any query string.
-        public let url: URL
         /// The header fields Davy set: `Content-Type` and ``DavyConfiguration/headers``.
         public let headers: [String: String]
         /// The JSON body.

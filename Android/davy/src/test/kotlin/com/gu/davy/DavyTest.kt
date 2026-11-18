@@ -450,9 +450,10 @@ class DavyTest {
         val requests = transport.requests
         assertEquals(6, requests.size)
         for (request in requests) {
-            assertEquals("POST", request.method)
             assertEquals("https://example.com/events?key=abc", request.url)
             assertEquals("application/json", request.headers["Content-Type"])
+            assertEquals("Davy", request.headers["User-Agent"])
+            assertEquals("*", request.headers["Accept-Language"])
             assertEquals("Bearer token", request.headers["Authorization"])
             val payload = JSONObject(request.body.decodeToString())
             assertEquals(1, payload.getJSONArray("events").length())

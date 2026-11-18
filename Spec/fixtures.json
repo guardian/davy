@@ -45,7 +45,9 @@
         "url": "https://api.example.com/events",
         "headers": {
           "Authorization": "Bearer secret-token",
-          "Content-Type": "application/json"
+          "Accept-Language": "*",
+          "Content-Type": "application/json",
+          "User-Agent": "Davy"
         },
         "body": {
           "events": [
@@ -113,7 +115,9 @@
         "method": "POST",
         "url": "https://api.example.com/v1/events?key=abc",
         "headers": {
-          "Content-Type": "application/json"
+          "Accept-Language": "*",
+          "Content-Type": "application/json",
+          "User-Agent": "Davy"
         },
         "body": {
           "events": [

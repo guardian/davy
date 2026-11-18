@@ -46,7 +46,7 @@ internal class HttpUrlConnectionTransport(private val timeoutMillis: Int = 60_00
     override fun send(request: HttpRequest): HttpResponse {
         val connection = URL(request.url).openConnection() as HttpURLConnection
         try {
-            connection.requestMethod = request.method
+            connection.requestMethod = "POST"
             connection.useCaches = false
             connection.connectTimeout = timeoutMillis
             connection.readTimeout = timeoutMillis

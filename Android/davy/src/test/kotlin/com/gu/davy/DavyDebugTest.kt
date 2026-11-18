@@ -182,9 +182,7 @@ class DavyDebugTest {
         assertEquals(2, requests.map { it.id }.toSet().size)
         assertEquals(transport.requests.map { it.body.decodeToString() }, requests.map { it.body })
         for (request in requests) {
-            assertEquals("POST", request.method)
-            assertEquals("https://example.com/events", request.url)
-            assertEquals(mapOf("Content-Type" to "application/json", "Authorization" to "Bearer token"), request.headers)
+            assertEquals(mapOf("Accept-Language" to "*", "User-Agent" to "Davy", "Content-Type" to "application/json", "Authorization" to "Bearer token"), request.headers)
             assertEquals(listOf("checkout_started", "checkout_finished"), JSONObject(request.body).getJSONArray("events").objects().map { it.getString("name") })
             assertEquals(pending.map { it.id }, request.eventIds)
             assertTrue(request.durationMillis >= 0)

@@ -604,9 +604,7 @@ struct DavyTests {
         #expect(requests.map(\.statusCode) == [500, 200])
         #expect(requests.map(\.outcome) == [.failed(reason: "HTTP 500"), .delivered])
         for request in requests {
-            #expect(request.method == "POST")
-            #expect(request.url.absoluteString == "https://example.com/events")
-            #expect(request.headers == ["Content-Type": "application/json", "Authorization": "Bearer token"])
+            #expect(request.headers == ["Accept-Language": "*", "User-Agent": "Davy", "Content-Type": "application/json", "Authorization": "Bearer token"])
             #expect(request.eventIDs == pending.map(\.id))
             #expect(request.body.contains(#""name":"checkout_finished""#))
             #expect((start...Date.now).contains(request.sentAt))
@@ -652,8 +650,6 @@ struct DavyTests {
         let reason = try #require(snapshot.lastFailure?.reason)
         #expect(request.statusCode == nil)
         #expect(request.outcome == .failed(reason: reason))
-        #expect(request.method == "POST")
-        #expect(request.url.path() == "/events")
         #expect(request.body.contains(#""name":"checkout_started""#))
     }
 
@@ -894,6 +890,93 @@ struct DavyTests {
         let sent = try #require(await updates.next())
         #expect(sent.pending.isEmpty)
         #expect(sent.sent.map(\.event) == logged.pending)
+    }
+
+    @Test func urlSessionTransportSendsFixedUserAgentAndAcceptLanguageHeaders() async throws {
+        let serverSocket = socket(AF_INET, SOCK_STREAM, 0)
+        try #require(serverSocket >= 0)
+        defer { close(serverSocket) }
+
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = 0
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let bound = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(serverSocket, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        try #require(bound == 0)
+        try #require(listen(serverSocket, 1) == 0)
+
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let named = withUnsafeMutablePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                getsockname(serverSocket, $0, &length)
+            }
+        }
+        try #require(named == 0)
+        let port = UInt16(bigEndian: address.sin_port)
+
+        async let receivedTask = Task.detached { () -> (requestLine: String, headers: [String: String]) in
+            let client = accept(serverSocket, nil, nil)
+            defer { close(client) }
+            var buffer = Data()
+            var byte: UInt8 = 0
+            while read(client, &byte, 1) == 1 {
+                buffer.append(byte)
+                if buffer.suffix(4) == Data("\r\n\r\n".utf8) { break }
+            }
+            let lines = String(decoding: buffer, as: UTF8.self).components(separatedBy: "\r\n")
+            let requestLine = lines.first ?? ""
+            var headers: [String: String] = [:]
+            for line in lines.dropFirst() where !line.isEmpty {
+                let parts = line.split(separator: ":", maxSplits: 1)
+                if parts.count == 2 {
+                    headers[parts[0].lowercased()] = parts[1].trimmingCharacters(in: .whitespaces)
+                }
+            }
+            if let contentLength = headers["content-length"].flatMap(Int.init), contentLength > 0 {
+                var remaining = contentLength
+                var chunk = [UInt8](repeating: 0, count: 1024)
+                while remaining > 0 {
+                    let count = read(client, &chunk, min(remaining, chunk.count))
+                    if count <= 0 { break }
+                    remaining -= count
+                }
+            }
+            let response = Data("HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n".utf8)
+            _ = response.withUnsafeBytes { write(client, $0.baseAddress, $0.count) }
+            return (requestLine, headers)
+        }.value
+
+        let endpoint = try #require(URL(string: "http://127.0.0.1:\(port)/events"))
+        let builder = RequestBuilder(
+            configuration: DavyConfiguration(
+                endpoint: endpoint,
+                headers: [
+                    "X-Api-Key": "secret",
+                    "user-agent": "Custom/1.0",
+                    "accept-language": "en-GB",
+                    "content-type": "text/plain",
+                ]
+            )
+        )
+        let request = try builder.request(
+            session: Session.start(environment: nil),
+            events: [EventRecord(.breadcrumb("checkout_started"), timestamp: .now)],
+            sentAt: .now
+        )
+        let response = try await URLSessionTransport(session: .davy).send(request)
+        let received = await receivedTask
+
+        #expect(response.statusCode == 204)
+        #expect(received.requestLine == "POST /events HTTP/1.1")
+        #expect(received.headers["content-type"] == "application/json")
+        #expect(received.headers["user-agent"] == "Davy")
+        #expect(received.headers["accept-language"] == "*")
+        #expect(received.headers["x-api-key"] == "secret")
     }
 
     #if os(macOS)

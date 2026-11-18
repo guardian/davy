@@ -82,6 +82,14 @@ function inspectBatch(
   if (contentType.toLowerCase() !== "application/json") {
     problems.push(`The Content-Type is "${contentType}", not "application/json"`);
   }
+  const userAgent = header(headers, "User-Agent") ?? "";
+  if (userAgent !== "Davy") {
+    problems.push(`The User-Agent is "${userAgent}", not "Davy"`);
+  }
+  const acceptLanguage = header(headers, "Accept-Language") ?? "";
+  if (acceptLanguage !== "*") {
+    problems.push(`The Accept-Language is "${acceptLanguage}", not "*"`);
+  }
   if (body.length === 0) {
     problems.push("The request has no body, but a JSON batch requires one");
     return [null, [], null];

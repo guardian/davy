@@ -208,6 +208,8 @@ struct SpecConformanceTests {
         case noEvents
         case missingSentAt
         case sentAtWithoutMilliseconds
+        case wrongUserAgent
+        case wrongAcceptLanguage
     }
 
     @Test(arguments: Breakage.allCases)
@@ -277,6 +279,18 @@ struct SpecConformanceTests {
             try changingBody(of: batch) { $0["sentAt"] = nil }
         case .sentAtWithoutMilliseconds:
             try changingBody(of: batch) { $0["sentAt"] = "2026-11-09T11:39:00Z" }
+        case .wrongUserAgent:
+            {
+                var request = batch
+                request.setValue("Davy/1.0 CFNetwork/3826.500.131 Darwin/25.0.0", forHTTPHeaderField: "User-Agent")
+                return request
+            }()
+        case .wrongAcceptLanguage:
+            {
+                var request = batch
+                request.setValue("en-GB,en;q=0.9", forHTTPHeaderField: "Accept-Language")
+                return request
+            }()
         }
         #expect(!spec.violations(of: broken).isEmpty)
     }

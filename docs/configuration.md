@@ -10,7 +10,7 @@ Only `endpoint` is required. The options have the same names on every platform; 
 | `onInvalidEventName` | `.send` / `SEND` | What to do with event names that aren't lower snake case; see [Consistent event names](logging-events.md#consistent-event-names) |
 | `maxEventSize` | `4096` | The largest event in bytes, measured as a single-event JSON request body; larger events are replaced with an error; see [Event size](logging-events.md#event-size) |
 | `logsAppLifecycleEvents` | `false` | Log `app_foregrounded` and `app_backgrounded` breadcrumbs; see [Foreground and background](logging-events.md#foreground-and-background) |
-| `headers` | Empty | Extra HTTP header fields for every request, for example `Authorization` |
+| `headers` | Empty | Extra HTTP header fields for every request, for example `Authorization`; `Content-Type`, `User-Agent`, and `Accept-Language` are always set by Davy |
 | `batchSize` | `100` | The number of pending events that triggers a send, and the most events in one request. Set it to `1` to send each event as soon as it's logged |
 | `debounceInterval` | 10 seconds | How long to wait after the most recent event before sending a partial batch |
 | `maxEventAge` | 30 days | How old unsent events can get before they're discarded |

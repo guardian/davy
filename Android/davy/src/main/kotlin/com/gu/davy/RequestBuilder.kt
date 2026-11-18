@@ -2,9 +2,8 @@ package com.gu.davy
 
 import java.net.URI
 
-/** An HTTP request ready to be sent by an [EventTransport]. */
+/** A `POST` request ready to be sent by an [EventTransport]. */
 internal class HttpRequest(
-    val method: String,
     val url: String,
     val headers: Map<String, String>,
     val body: ByteArray,
@@ -20,11 +19,19 @@ internal class RequestBuilder(configuration: DavyConfiguration) {
      * [sentAtMillis], the device's time when it's sent.
      */
     fun request(session: Session, events: List<EventRecord>, sentAtMillis: Long): HttpRequest = HttpRequest(
-        method = "POST",
         url = endpoint.toString(),
         headers = buildMap {
+            for ((field, value) in headers) {
+                if (!field.equals("Content-Type", ignoreCase = true) &&
+                    !field.equals("User-Agent", ignoreCase = true) &&
+                    !field.equals("Accept-Language", ignoreCase = true)
+                ) {
+                    put(field, value)
+                }
+            }
             put("Content-Type", "application/json")
-            putAll(headers)
+            put("User-Agent", "Davy")
+            put("Accept-Language", "*")
         },
         body = DavyJson.payload(session, events, sentAtMillis).toByteArray(Charsets.UTF_8),
     )
