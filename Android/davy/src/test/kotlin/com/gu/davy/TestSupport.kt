@@ -93,7 +93,8 @@ internal fun testSession(environment: String? = null, info: Map<String, Any>? = 
     osVersion = "15.0.0",
     deviceModel = "Pixel 9",
     locale = "en_GB",
-    info = info?.takeIf { it.isNotEmpty() },
+    // Normalized as `Session.start` does.
+    info = info?.takeIf { it.isNotEmpty() }?.let(InfoValues::normalize),
 )
 
 internal fun makeDavy(
@@ -108,8 +109,9 @@ internal fun makeDavy(
     headers: Map<String, String> = emptyMap(),
     batchSize: Int = 100,
     debounceInterval: Duration = 60.seconds,
+    maxPendingEvents: Int = 1000,
     debugHistoryLimit: Int = 200,
-    sendsEvents: Boolean = true,
+    initialMode: DavyConfiguration.Mode = DavyConfiguration.Mode.FULL,
     lifecycle: LifecycleSource? = null,
     session: Session = testSession(environment, info),
 ): Davy = Davy(
@@ -123,9 +125,10 @@ internal fun makeDavy(
         headers = headers,
         batchSize = batchSize,
         debounceInterval = debounceInterval,
+        maxPendingEvents = maxPendingEvents,
         storageDirectory = directory,
         debugHistoryLimit = debugHistoryLimit,
-        sendsEvents = sendsEvents,
+        initialMode = initialMode,
     ),
     session = session,
     storageDirectory = directory,
@@ -174,7 +177,7 @@ internal fun JSONArray.objects(): List<JSONObject> = (0 until length()).map(::ge
 internal fun JSONObject.strings(): Map<String, String> = keys().asSequence().associateWith(::getString)
 
 /** An `info` object's values as [String], [Long], [Double], or [Boolean]. */
-internal fun JSONObject.infoValues(): Map<String, Any> = keys().asSequence().associateWith { InfoValues.normalize(get(it)) }
+internal fun JSONObject.infoValues(): Map<String, Any> = keys().asSequence().associateWith { checkNotNull(InfoValues.normalize(get(it))) }
 
 /** `info` without the diagnostics added to errors. */
 internal fun JSONObject.loggedInfo(): Map<String, Any>? =

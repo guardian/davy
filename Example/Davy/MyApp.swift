@@ -51,8 +51,9 @@ private let DavyConfig = DavyConfiguration(
     // include personal data or identifiers.
     info: ["edition": "uk"],
     // Crash on names that aren't lower snake case (like "checkoutStarted") in debug builds so they're
-    // fixed before shipping, but still send them in release builds. `.sendError` reports them as a
-    // "davy_invalid_event_name" error instead, and `.logError` and `.ignore` discard them.
+    // fixed before shipping, but ignore them in release builds. `.sendError` reports them as a
+    // "davy_invalid_event_name" error instead, `.logError` discards them with a console error, and
+    // `.send` sends them as they are.
     onInvalidEventName: {
         #if DEBUG
         .crash
@@ -74,12 +75,15 @@ private let DavyConfig = DavyConfiguration(
     debounceInterval: .seconds(5),
     // Discard events that still haven't been delivered after 7 days (default 30 days).
     maxEventAge: .seconds(7 * 24 * 60 * 60),
+    // Keep at most 500 events waiting to be sent, discarding the oldest beyond that (default 1,000).
+    maxPendingEvents: 500,
     storageDirectory: DavyConfiguration.defaultStorageDirectory,
     // Keep the 200 most recently sent events in memory for the "Debug Events" screen (the
     // default). 0 keeps none.
     debugHistoryLimit: 200,
     allowsInsecureHTTP: allowsInsecureHTTP,
-    // Send events from launch (the default). Set to false to only store them until `start()` is
-    // called, and call `start()` / `stop()` from remote config as a kill switch.
-    sendsEvents: true
+    // Store and send events from launch (the default). `.localOnly` stores them without sending
+    // until `start()` is called, and `.off` does neither. Set it from remote config or the user's
+    // consent each launch, then call `start()`, `stop()`, or `stop(deleteAll: true)` when it changes.
+    initialMode: .full
 )

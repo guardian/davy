@@ -32,6 +32,12 @@ struct FileEventStore {
         } catch {
             Self.logger.error("Failed to create event directory: \(error)")
         }
+        // Set on every launch, so directories created by earlier versions are excluded too.
+        do {
+            try directory.excludeFromBackup()
+        } catch {
+            Self.logger.error("Failed to exclude event directory from backups: \(error)")
+        }
         let contents = (try? fileManager.contentsOfDirectory(atPath: directory.path(percentEncoded: false))) ?? []
         fileNames = contents.filter { $0.hasSuffix(".\(Self.fileExtension)") }.sorted()
     }
@@ -50,14 +56,30 @@ struct FileEventStore {
         fileNames.append(name)
     }
 
-    /// Reads up to `limit` of the oldest events. Unreadable files are discarded.
+    /// Reads up to `limit` of the oldest events.
+    ///
+    /// Empty files, which can never be sent, are discarded. Files that exist but can't be read
+    /// right now are kept and skipped, so they're read again next time. For example, data
+    /// protection can lock files while the device is locked. They expire after `maxEventAge` if
+    /// they never become readable.
     mutating func oldest(_ limit: Int) -> [StoredEvent] {
         var events: [StoredEvent] = []
-        var unreadable: [String] = []
+        var broken: [String] = []
+        var unreadableCount = 0
         for name in fileNames {
             guard events.count < limit else { break }
-            guard let data = try? Data(contentsOf: url(for: name)), !data.isEmpty else {
-                unreadable.append(name)
+            let data: Data
+            do {
+                data = try Data(contentsOf: url(for: name))
+            } catch CocoaError.fileReadNoSuchFile {
+                broken.append(name)
+                continue
+            } catch {
+                unreadableCount += 1
+                continue
+            }
+            guard !data.isEmpty else {
+                broken.append(name)
                 continue
             }
             events.append(StoredEvent(
@@ -66,9 +88,12 @@ struct FileEventStore {
                 data: data
             ))
         }
-        if !unreadable.isEmpty {
-            Self.logger.error("Discarding \(unreadable.count) unreadable event file(s)")
-            discard(fileNames: unreadable)
+        if unreadableCount > 0 {
+            Self.logger.error("Couldn't read \(unreadableCount) event file(s); keeping them to try again later")
+        }
+        if !broken.isEmpty {
+            Self.logger.error("Discarding \(broken.count) empty or missing event file(s)")
+            discard(fileNames: broken)
         }
         return events
     }
@@ -89,6 +114,22 @@ struct FileEventStore {
         guard !expired.isEmpty else { return }
         Self.logger.info("Pruning \(expired.count) expired event(s)")
         discard(fileNames: expired)
+    }
+
+    /// Deletes every event.
+    mutating func discardAll() {
+        discard(fileNames: fileNames)
+    }
+
+    /// Deletes the oldest events until at most `limit` remain, not counting `excluded`, such as
+    /// events in a request in flight. Returns how many were deleted.
+    mutating func discardOldest(keeping limit: Int, excluding excluded: Set<String>) -> Int {
+        let candidates = fileNames.filter { !excluded.contains($0) }
+        let excess = candidates.count - limit
+        guard excess > 0 else { return 0 }
+        let count = fileNames.count
+        discard(fileNames: Array(candidates.prefix(excess)))
+        return count - fileNames.count
     }
 
     private mutating func discard(fileNames names: [String]) {
@@ -115,5 +156,19 @@ struct FileEventStore {
             return nil
         }
         return Date(timeIntervalSince1970: TimeInterval(millis) / 1000)
+    }
+}
+
+extension URL {
+    /// Keeps this file, or this directory and everything in it, out of iCloud and device backups,
+    /// and Time Machine on macOS.
+    ///
+    /// Pending events only make sense on the device that logged them. A backup could restore them,
+    /// with their session data, onto another device, which would then send them.
+    func excludeFromBackup() throws {
+        var url = self
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try url.setResourceValues(values)
     }
 }

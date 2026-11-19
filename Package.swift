@@ -25,6 +25,10 @@ let package = Package(
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
             name: "Davy",
+            // Declares what Davy collects, so it's included in apps' privacy reports.
+            resources: [
+                .copy("PrivacyInfo.xcprivacy"),
+            ],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],

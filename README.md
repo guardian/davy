@@ -93,3 +93,7 @@ Davy sends events in the background in batches; see [Your backend](docs/backend.
 - [Your backend](docs/backend.md): what your endpoint receives and how it should respond
 - [Privacy](docs/privacy.md): what Davy collects, and what it doesn't
 - [Development](docs/development.md): the repository, the shared spec, and running the tests
+
+## License
+
+Davy is licensed under the [Apache License, Version 2.0](LICENSE).

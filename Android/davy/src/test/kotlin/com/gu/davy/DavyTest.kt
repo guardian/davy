@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.DurationUnit
 
 /** Ported from the Swift client's `DavyTests`, so both clients behave the same. */
 class DavyTest {
@@ -146,6 +147,30 @@ class DavyTest {
     }
 
     @Test
+    fun infoValuesThatArentTextNumbersBooleansOrEnumsAreDropped() {
+        data class User(val email: String)
+        val user = User("reader@test.invalid")
+        val transport = MockTransport()
+        val telemetry = makeDavy(directory(), transport, info = mapOf("edition" to "uk", "user" to user)).tracked()
+
+        telemetry.log(
+            Event.Breadcrumb(
+                "feed_loaded",
+                mapOf("user" to user, "unit" to DurationUnit.SECONDS, "initial" to 'a', "query" to StringBuilder("news"), "count" to 3u),
+            ),
+        )
+        telemetry.flushAndWaitBlocking()
+
+        val payload = transport.payloads.single()
+        assertEquals(mapOf("edition" to "uk"), payload.getJSONObject("session").getJSONObject("info").infoValues())
+        assertEquals(
+            mapOf("unit" to "SECONDS", "initial" to "a", "query" to "news", "count" to 3L),
+            payload.getJSONArray("events").getJSONObject(0).getJSONObject("info").infoValues(),
+        )
+        assertFalse(payload.toString().contains("test.invalid"))
+    }
+
+    @Test
     fun infoStoredAsStringsByEarlierVersionsStillDecodes() {
         val json = JSONObject("""{"id":"6F1D2C4B-8A3E-4F5D-9C7B-1E2A3B4C5D6E","timestamp":"2026-11-09T11:38:57.112Z","type":"breadcrumb","name":"feed_loaded","info":{"count":"3","cached":"true"}}""")
         assertEquals(mapOf("count" to "3", "cached" to "true"), DavyJson.parseEvent(json).info)
@@ -199,9 +224,9 @@ class DavyTest {
     }
 
     @Test
-    fun eventsAreStoredButNotSentUntilStartedWhenConfiguredOff() {
+    fun eventsAreStoredButNotSentUntilStartedWhenStartingLocalOnly() {
         val transport = MockTransport()
-        val telemetry = makeDavy(directory(), transport, batchSize = 1, sendsEvents = false).tracked()
+        val telemetry = makeDavy(directory(), transport, batchSize = 1, initialMode = DavyConfiguration.Mode.LOCAL_ONLY).tracked()
 
         telemetry.log(Event.Breadcrumb("event_0"))
         telemetry.log(Event.Breadcrumb("event_1"))
@@ -231,6 +256,50 @@ class DavyTest {
 
         telemetry.start()
         assertTrue(waitUntil { transport.sentNames == listOf("before_stop", "while_stopped") })
+    }
+
+    @Test
+    fun eventsAreNeitherStoredNorSentWhenStartingOff() {
+        val transport = MockTransport()
+        val telemetry = makeDavy(directory(), transport, batchSize = 1, initialMode = DavyConfiguration.Mode.OFF).tracked()
+
+        telemetry.log(Event.Breadcrumb("while_off"))
+        telemetry.addSessionInfo(mapOf("tier" to "supporter"))
+        telemetry.flushAndWaitBlocking()
+        val snapshot = telemetry.debugSnapshotBlocking()
+        assertTrue(snapshot.pending.isEmpty())
+        assertEquals(0, snapshot.loggedCount)
+        assertEquals(0, transport.attempts)
+
+        telemetry.start()
+        telemetry.log(Event.Breadcrumb("after_start"))
+        assertTrue(waitUntil { transport.sentNames == listOf("after_start") })
+        // Session info added while off still applies to later events.
+        assertEquals(mapOf("tier" to "supporter"), transport.payloads.first().getJSONObject("session").getJSONObject("info").infoValues())
+    }
+
+    @Test
+    fun stoppingWithDeleteAllDeletesStoredEventsAndStopsStoringThem() {
+        val directory = directory()
+        val transport = MockTransport()
+        val telemetry = makeDavy(directory, transport, batchSize = 1).tracked()
+
+        telemetry.log(Event.Breadcrumb("sent_before"))
+        telemetry.flushAndWaitBlocking()
+        telemetry.stop()
+        telemetry.log(Event.Breadcrumb("stored_before"))
+        telemetry.stop(deleteAll = true)
+        telemetry.log(Event.Breadcrumb("while_off"))
+
+        val snapshot = telemetry.debugSnapshotBlocking()
+        assertTrue(snapshot.pending.isEmpty())
+        assertTrue(snapshot.sent.isEmpty())
+        assertTrue(snapshot.requests.isEmpty())
+        assertTrue(File(directory, "events").list().orEmpty().isEmpty())
+
+        telemetry.start()
+        telemetry.log(Event.Breadcrumb("after_start"))
+        assertTrue(waitUntil { transport.sentNames == listOf("sent_before", "after_start") })
     }
 
     @Test
@@ -343,6 +412,60 @@ class DavyTest {
 
         assertEquals(listOf("event-0"), transport.sentNames)
         assertEquals(0, FileEventStore(eventsDirectory).count)
+    }
+
+    @Test
+    fun storedEventsThatCantBeReadAreKeptUntilTheyCanBe() {
+        val directory = directory()
+        val transport = MockTransport()
+        transport.setFailing(true)
+        val telemetry = makeDavy(directory, transport).tracked()
+        telemetry.log(Event.Breadcrumb("locked"))
+        telemetry.flushAndWaitBlocking()
+
+        val locked = File(directory, "events").listFiles().orEmpty().single()
+        assertTrue(locked.setReadable(false))
+        transport.setFailing(false)
+        telemetry.log(Event.Breadcrumb("readable"))
+        telemetry.flushAndWaitBlocking()
+        assertEquals(listOf("readable"), transport.sentNames)
+
+        assertTrue(locked.setReadable(true))
+        telemetry.flushAndWaitBlocking()
+        assertEquals(listOf("readable", "locked"), transport.sentNames)
+    }
+
+    @Test
+    fun theOldestEventsAreDiscardedOverMaxPendingEvents() {
+        val transport = MockTransport()
+        val telemetry = makeDavy(directory(), transport, maxPendingEvents = 3).tracked()
+
+        repeat(5) { index -> telemetry.log(Event.Breadcrumb("event_$index")) }
+        telemetry.flushAndWaitBlocking()
+
+        assertEquals(listOf("event_2", "event_3", "event_4"), transport.sentNames)
+        val snapshot = telemetry.debugSnapshotBlocking()
+        assertEquals(3, snapshot.loggedCount)
+        assertEquals(3, snapshot.sentCount)
+    }
+
+    @Test
+    fun eventsInARequestInFlightDontCountTowardsMaxPendingEvents() {
+        val transport = MockTransport()
+        transport.delayMillis = 200
+        val telemetry = makeDavy(directory(), transport, batchSize = 2, maxPendingEvents = 2).tracked()
+
+        telemetry.log(Event.Breadcrumb("event_0"))
+        telemetry.log(Event.Breadcrumb("event_1"))
+        assertTrue(waitUntil { transport.attempts == 1 })
+        telemetry.log(Event.Breadcrumb("event_2"))
+        telemetry.log(Event.Breadcrumb("event_3"))
+        telemetry.flushAndWaitBlocking()
+
+        assertEquals(listOf("event_0", "event_1", "event_2", "event_3"), transport.sentNames)
+        val snapshot = telemetry.debugSnapshotBlocking()
+        assertEquals(4, snapshot.loggedCount)
+        assertEquals(4, snapshot.sentCount)
     }
 
     @Test

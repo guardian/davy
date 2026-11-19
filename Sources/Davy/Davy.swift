@@ -46,9 +46,12 @@ public final class Davy: Sendable {
     private let logger = Logger(subsystem: "Davy", category: "Davy")
 
     /// Creates an instance with a new session and starts sending any events left over from a
-    /// previous session, unless ``DavyConfiguration/sendsEvents`` is `false`.
+    /// previous session, unless ``DavyConfiguration/initialMode`` says not to.
     public convenience init(configuration: DavyConfiguration) {
         self.init(configuration: configuration, transport: URLSessionTransport(allowsInsecureHTTP: configuration.allowsInsecureHTTP))
+        if !URLSessionTransport.allows(configuration.endpoint, allowsInsecureHTTP: configuration.allowsInsecureHTTP) {
+            logger.error("Davy's endpoint \(configuration.endpoint) isn't HTTPS, so events will be stored but never sent. Use an https URL, or set allowsInsecureHTTP during development.")
+        }
     }
 
     init(
@@ -187,23 +190,31 @@ public final class Davy: Sendable {
         commands.yield(.flush(nil))
     }
 
-    /// Starts sending events, including any logged while sending was stopped.
+    /// Starts storing and sending events, including any stored while stopped: the
+    /// ``DavyConfiguration/Mode/full`` mode.
     ///
-    /// Use it with ``stop()`` and ``DavyConfiguration/sendsEvents`` as a kill switch, for example
-    /// driven by remote config. Calling it while already sending does nothing. Any retry backoff or
-    /// server-requested pause still in effect is respected.
+    /// Use it with ``stop(deleteAll:)`` and ``DavyConfiguration/initialMode``, for example from
+    /// remote config as a kill switch, or when the user gives consent. Calling it while already
+    /// sending does nothing. Any retry backoff or server-requested pause still in effect is
+    /// respected.
     public func start() {
-        commands.yield(.setSendingEnabled(true))
+        commands.yield(.setMode(.full, deletingEvents: false))
     }
 
-    /// Stops sending events. Events are still logged, stored on disk, and shown in
-    /// ``DavyDebugView``, and are sent once ``start()`` is called, unless they're older than
-    /// ``DavyConfiguration/maxEventAge`` by then.
+    /// Stops sending events.
     ///
-    /// A request already in flight finishes, but no more are made. Calling it while already
-    /// stopped does nothing.
-    public func stop() {
-        commands.yield(.setSendingEnabled(false))
+    /// By default, this is the ``DavyConfiguration/Mode/localOnly`` mode: events are still logged,
+    /// stored on disk, and shown in ``DavyDebugView``, and are sent once ``start()`` is called,
+    /// unless they're older than ``DavyConfiguration/maxEventAge`` by then.
+    ///
+    /// With `deleteAll` set, this is the ``DavyConfiguration/Mode/off`` mode instead: every event
+    /// waiting to be sent, and the debug history of sent events and requests, is deleted, and
+    /// events logged from now on aren't stored. Use it, for example, when the user withdraws
+    /// consent.
+    ///
+    /// Either way, a request already in flight finishes, but no more are made.
+    public func stop(deleteAll: Bool = false) {
+        commands.yield(.setMode(deleteAll ? .off : .localOnly, deletingEvents: deleteAll))
     }
 
     /// Sends all pending events now, like ``flush()``, and waits for the attempt to finish.

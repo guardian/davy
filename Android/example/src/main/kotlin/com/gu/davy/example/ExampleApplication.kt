@@ -57,10 +57,15 @@ class ExampleApplication : Application() {
         debounceInterval = 5.seconds,
         // Discard events that still haven't been delivered after 7 days (default 30 days).
         maxEventAge = 7.days,
+        // Keep at most 500 events waiting to be sent, discarding the oldest beyond that (default
+        // 1,000).
+        maxPendingEvents = 500,
         storageDirectory = Davy.defaultStorageDirectory(this),
         allowsInsecureHttp = BuildConfig.DEBUG,
-        // Send events from launch (the default). Set to false to only store them until `start()`
-        // is called, and call `start()` / `stop()` from remote config as a kill switch.
-        sendsEvents = true,
+        // Store and send events from launch (the default). `LOCAL_ONLY` stores them without
+        // sending until `start()` is called, and `OFF` does neither. Set it from remote config or
+        // the user's consent each launch, then call `start()`, `stop()`, or
+        // `stop(deleteAll = true)` when it changes.
+        initialMode = DavyConfiguration.Mode.FULL,
     )
 }

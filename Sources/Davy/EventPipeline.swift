@@ -59,8 +59,9 @@ actor EventPipeline {
         case removeDebugObserver(UUID)
         /// Forgets the events recorded as sent.
         case clearDebugHistory
-        /// Turns sending on or off. Events are stored either way.
-        case setSendingEnabled(Bool)
+        /// Changes whether events are stored and sent, first deleting every stored event and the
+        /// debug history if `deletingEvents` is set.
+        case setMode(DavyConfiguration.Mode, deletingEvents: Bool)
     }
 
     /// Pending events to send in one request, all from the same session.
@@ -87,8 +88,14 @@ actor EventPipeline {
     private var consecutiveFailures = 0
     /// When a server-requested pause ends.
     private var pausedUntil: Date?
-    /// Whether events are sent. When `false`, events are still stored but no requests are made.
-    private var isSendingEnabled: Bool
+    /// Whether events are stored and sent.
+    private var mode: DavyConfiguration.Mode
+    /// The files of the events in the request in flight, which ``DavyConfiguration/maxPendingEvents``
+    /// doesn't count, since they're about to be removed.
+    private var sendingFileNames: Set<String> = []
+    /// Whether discarding events over ``DavyConfiguration/maxPendingEvents`` has been logged, so
+    /// it's logged once rather than for every event.
+    private var hasLoggedDiscardingOverMaxPendingEvents = false
 
     /// Events the server responded to, oldest first, up to
     /// ``DavyConfiguration/debugHistoryLimit``.
@@ -123,7 +130,7 @@ actor EventPipeline {
         self.requestBuilder = RequestBuilder(configuration: configuration)
         self.transport = transport
         self.retryPolicy = retryPolicy
-        self.isSendingEnabled = configuration.sendsEvents
+        self.mode = configuration.initialMode
         self.pauseFile = configuration.storageDirectory.appending(
             path: "paused-until-\(RequestBuilder.destination(for: configuration.endpoint))", directoryHint: .notDirectory
         )
@@ -135,6 +142,7 @@ actor EventPipeline {
     /// Consumes commands in order until the stream finishes.
     func run(_ commands: AsyncStream<Command>) async {
         pruneExpiredEvents()
+        discardEventsOverMaxPendingEvents()
         restorePause()
         recordLeftoverEventsAsLogged()
         if store.count > 0 {
@@ -182,24 +190,43 @@ actor EventPipeline {
             sentHistory.removeAll()
             requestHistory.removeAll()
             debugStateDidChange()
-        case let .setSendingEnabled(enabled):
-            guard enabled != isSendingEnabled else { return }
-            isSendingEnabled = enabled
-            if enabled {
+        case let .setMode(mode, deletingEvents):
+            if deletingEvents {
+                deleteEvents()
+            }
+            guard mode != self.mode else { return }
+            self.mode = mode
+            switch mode {
+            case .full:
                 logger.info("Sending started")
                 if store.count > 0 {
                     requestSend(force: false)
                 }
-            } else {
+            case .localOnly:
                 logger.info("Sending stopped; events will be stored but not sent")
+                debounceTask?.cancel()
+                debounceTask = nil
+            case .off:
+                logger.info("Stopped; events will be neither stored nor sent")
                 debounceTask?.cancel()
                 debounceTask = nil
             }
         }
     }
 
+    /// Deletes every stored event, including any in a request in flight, so none can be retried,
+    /// and the debug history of sent events and requests, which include events' contents.
+    private func deleteEvents() {
+        let count = store.count
+        store.discardAll()
+        sentHistory.removeAll()
+        requestHistory.removeAll()
+        logger.info("Deleted \(count) stored event(s)")
+        debugStateDidChange()
+    }
+
     private func persist(_ record: EventRecord) {
-        guard let record = recordWithinMaxEventSize(record) else { return }
+        guard mode != .off, let record = recordWithinMaxEventSize(record) else { return }
         do {
             let pending = PendingEvent(session: session, event: record, destination: requestBuilder.destination)
             try store.append(DavyJSON.encoder.encode(pending), loggedAt: record.timestamp)
@@ -208,13 +235,14 @@ actor EventPipeline {
             return
         }
         loggedCount += 1
+        discardEventsOverMaxPendingEvents()
         recordActivity(logged: 1, at: record.timestamp)
         recordSessionEvent(session.id, loggedAt: record.timestamp)
         debugStateDidChange()
 
         if store.count >= batchSize {
             requestSend(force: false)
-        } else if isSendingEnabled {
+        } else if mode == .full {
             scheduleDebouncedSend()
         }
     }
@@ -265,7 +293,7 @@ actor EventPipeline {
     private func requestSend(force: Bool) {
         debounceTask?.cancel()
         debounceTask = nil
-        guard isSendingEnabled else { return }
+        guard mode == .full else { return }
         // A server-requested pause is honored even when flushing; it ends by itself.
         guard pausedUntil == nil else { return }
         if force {
@@ -284,8 +312,10 @@ actor EventPipeline {
 
         var failed = false
         // Checked before each request so stopping takes effect after the request in flight.
-        while !failed, isSendingEnabled, pausedUntil == nil, let delivery = nextDelivery() {
+        while !failed, mode == .full, pausedUntil == nil, let delivery = nextDelivery() {
+            sendingFileNames = Set(delivery.stored.map(\.fileName))
             let (outcome, request) = await Self.send(delivery, via: transport, requestBuilder: requestBuilder)
+            sendingFileNames = []
             if let request {
                 recordRequest(request)
             }
@@ -309,12 +339,27 @@ actor EventPipeline {
                 recordFailure(reason)
             }
         }
+        // Events kept after a failure may push the count over the limit now that none are in flight.
+        discardEventsOverMaxPendingEvents()
 
         if pausedUntil != nil {
             schedulePauseEnd()
         } else if failed {
             scheduleRetry()
         }
+    }
+
+    /// Discards the oldest events over ``DavyConfiguration/maxPendingEvents``, not counting any in
+    /// a request in flight.
+    private func discardEventsOverMaxPendingEvents() {
+        let limit = max(1, configuration.maxPendingEvents)
+        let discarded = store.discardOldest(keeping: limit, excluding: sendingFileNames)
+        guard discarded > 0 else { return }
+        if !hasLoggedDiscardingOverMaxPendingEvents {
+            hasLoggedDiscardingOverMaxPendingEvents = true
+            logger.error("Discarding the oldest pending events: more than maxPendingEvents (\(limit)) are waiting to be sent")
+        }
+        debugStateDidChange()
     }
 
     /// The oldest pending events that can go in one request: up to `batchSize` events from the
@@ -412,6 +457,13 @@ actor EventPipeline {
             try Data(String(until.timeIntervalSince1970).utf8).write(to: pauseFile, options: .atomic)
         } catch {
             logger.error("Failed to store pause: \(error)")
+            return
+        }
+        // Set after every write, since an atomic write replaces the file and its attributes.
+        do {
+            try pauseFile.excludeFromBackup()
+        } catch {
+            logger.error("Failed to exclude pause from backups: \(error)")
         }
     }
 

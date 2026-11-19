@@ -1,6 +1,7 @@
 package com.gu.davy
 
 import java.io.IOException
+import java.net.URI
 import java.util.concurrent.TimeUnit
 import okhttp3.Authenticator
 import okhttp3.CookieJar
@@ -50,7 +51,7 @@ internal class OkHttpTransport(
             builder.header(field, value)
         }
         val post = builder.post(request.body.toRequestBody()).build()
-        if (!post.url.isHttps && !allowsInsecureHttp) {
+        if (!allows(post.url.toUri(), allowsInsecureHttp)) {
             throw IOException("The telemetry endpoint must use HTTPS")
         }
         return client.newCall(post).execute().use { response ->
@@ -58,8 +59,8 @@ internal class OkHttpTransport(
         }
     }
 
-    private companion object {
-        val client = OkHttpClient.Builder()
+    companion object {
+        private val client = OkHttpClient.Builder()
             .cookieJar(CookieJar.NO_COOKIES)
             .authenticator(Authenticator.NONE)
             .proxyAuthenticator(Authenticator.NONE)
@@ -70,5 +71,11 @@ internal class OkHttpTransport(
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
             .build()
+
+        /** Whether requests can be sent to [uri]: always over HTTPS, and over plain HTTP only when [allowsInsecureHttp] is set. */
+        fun allows(uri: URI, allowsInsecureHttp: Boolean): Boolean {
+            val scheme = uri.scheme?.lowercase()
+            return scheme == "https" || (allowsInsecureHttp && scheme == "http")
+        }
     }
 }

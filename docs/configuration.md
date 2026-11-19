@@ -15,8 +15,9 @@ Only `endpoint` is required. The options have the same names on every platform; 
 | `batchSize` | `100` | The number of pending events that triggers a send, and the most events in one request. Set it to `1` to send each event as soon as it's logged |
 | `debounceInterval` | 10 seconds | How long to wait after the most recent event before sending a partial batch |
 | `maxEventAge` | 30 days | How old unsent events can get before they're discarded |
+| `maxPendingEvents` | `1000` | The most events kept waiting to be sent, not counting any in a request in flight; the oldest are discarded beyond that, so a long outage or stopped sending can't fill the disk |
 | `storageDirectory` | A platform default | Where pending events are stored; see [iOS and macOS](setup-apple.md#how-it-behaves-on-apple-platforms) and [Android](setup-android.md#how-it-behaves-on-android). Use a separate directory for each instance |
-| `sendsEvents` | `true` | Whether events are sent from launch. When `false`, events are still logged, stored, and shown on the debug screen, but nothing is sent until `start()` is called; see [Turning sending off](delivery.md#turning-sending-off) |
+| `initialMode` | `.full` / `FULL` | Whether events are stored and sent (full), stored but not sent (local only), or neither (off) when the instance is created; change it later with `start()` and `stop()`; see [Turning Davy off](delivery.md#turning-davy-off) |
 | `debugHistoryLimit` | `200` | How many sent events, and how many requests, to keep in memory for the debug screen and snapshots; `0` keeps none; see [Debugging events](debugging.md) |
 
 ## A full configuration
@@ -36,9 +37,10 @@ let telemetry = Davy(configuration: DavyConfiguration(
     batchSize: 20,
     debounceInterval: .seconds(5),
     maxEventAge: .seconds(7 * 24 * 60 * 60),
+    maxPendingEvents: 500,
     storageDirectory: DavyConfiguration.defaultStorageDirectory,
     debugHistoryLimit: 200,
-    sendsEvents: true
+    initialMode: .full
 ))
 ```
 
@@ -55,9 +57,10 @@ val telemetry = Davy(context, DavyConfiguration(
     batchSize = 20,
     debounceInterval = 5.seconds,
     maxEventAge = 7.days,
+    maxPendingEvents = 500,
     storageDirectory = Davy.defaultStorageDirectory(context),
     debugHistoryLimit = 200,
-    sendsEvents = true,
+    initialMode = DavyConfiguration.Mode.FULL,
 ))
 ```
 

@@ -109,8 +109,9 @@ private func makeDavy(
     headers: [String: String] = [:],
     batchSize: Int = 100,
     debounceInterval: Duration = .seconds(60),
+    maxPendingEvents: Int = 1000,
     debugHistoryLimit: Int = 200,
-    sendsEvents: Bool = true,
+    initialMode: DavyConfiguration.Mode = .full,
     notificationCenter: NotificationCenter? = nil
 ) -> Davy {
     Davy(
@@ -124,9 +125,10 @@ private func makeDavy(
             headers: headers,
             batchSize: batchSize,
             debounceInterval: debounceInterval,
+            maxPendingEvents: maxPendingEvents,
             storageDirectory: directory,
             debugHistoryLimit: debugHistoryLimit,
-            sendsEvents: sendsEvents
+            initialMode: initialMode
         ),
         transport: transport,
         retryPolicy: RetryPolicy(initialDelay: .seconds(60), maxDelay: .seconds(60)),
@@ -308,11 +310,11 @@ struct DavyTests {
         #expect(payloads.map { $0.events.map(\.type) } == [["breadcrumb", "error"], ["breadcrumb"]])
     }
 
-    @Test func eventsAreStoredButNotSentUntilStartedWhenConfiguredOff() async throws {
+    @Test func eventsAreStoredButNotSentUntilStartedWhenStartingLocalOnly() async throws {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let transport = MockTransport()
-        let telemetry = makeDavy(directory: directory, transport: transport, batchSize: 1, sendsEvents: false)
+        let telemetry = makeDavy(directory: directory, transport: transport, batchSize: 1, initialMode: .localOnly)
 
         telemetry.log(.breadcrumb("event_0"))
         telemetry.log(.breadcrumb("event_1"))
@@ -345,6 +347,52 @@ struct DavyTests {
         #expect(await waitUntil { await transport.sentNames == ["before_stop", "while_stopped"] })
     }
 
+    @Test func eventsAreNeitherStoredNorSentWhenStartingOff() async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transport = MockTransport()
+        let telemetry = makeDavy(directory: directory, transport: transport, batchSize: 1, initialMode: .off)
+
+        telemetry.log(.breadcrumb("while_off"))
+        telemetry.addSessionInfo(["tier": "supporter"])
+        await telemetry.flushAndWait()
+        let snapshot = await telemetry.debugSnapshot()
+        #expect(snapshot.pending.isEmpty)
+        #expect(snapshot.loggedCount == 0)
+        #expect(await transport.attempts == 0)
+
+        telemetry.start()
+        telemetry.log(.breadcrumb("after_start"))
+        #expect(await waitUntil { await transport.sentNames == ["after_start"] })
+        // Session info added while off still applies to later events.
+        #expect(await transport.payloads.first?.session.info == ["tier": "supporter"])
+    }
+
+    @Test func stoppingWithDeleteAllDeletesStoredEventsAndStopsStoringThem() async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transport = MockTransport()
+        let telemetry = makeDavy(directory: directory, transport: transport, batchSize: 1)
+
+        telemetry.log(.breadcrumb("sent_before"))
+        await telemetry.flushAndWait()
+        telemetry.stop()
+        telemetry.log(.breadcrumb("stored_before"))
+        telemetry.stop(deleteAll: true)
+        telemetry.log(.breadcrumb("while_off"))
+
+        let snapshot = await telemetry.debugSnapshot()
+        #expect(snapshot.pending.isEmpty)
+        #expect(snapshot.sent.isEmpty)
+        #expect(snapshot.requests.isEmpty)
+        let eventsDirectory = directory.appending(path: "events", directoryHint: .isDirectory)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: eventsDirectory.path(percentEncoded: false)).isEmpty)
+
+        telemetry.start()
+        telemetry.log(.breadcrumb("after_start"))
+        #expect(await waitUntil { await transport.sentNames == ["sent_before", "after_start"] })
+    }
+
     @Test func leftoverEventsAreNotSentOnLaunchWhileStopped() async throws {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -358,7 +406,7 @@ struct DavyTests {
         await transport.setFailing(false)
         let attemptsBeforeRelaunch = await transport.attempts
 
-        let relaunched = makeDavy(directory: directory, transport: transport, sendsEvents: false)
+        let relaunched = makeDavy(directory: directory, transport: transport, initialMode: .localOnly)
         await relaunched.flushAndWait()
         #expect(await transport.attempts == attemptsBeforeRelaunch)
 
@@ -505,6 +553,67 @@ struct DavyTests {
 
         #expect(await transport.sentNames == ["event-0"])
         #expect(FileEventStore(directory: eventsDirectory).count == 0)
+    }
+
+    @Test func storedEventsThatCantBeReadAreKeptUntilTheyCanBe() async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transport = MockTransport()
+        await transport.setFailing(true)
+        let telemetry = makeDavy(directory: directory, transport: transport)
+        telemetry.log(.breadcrumb("locked"))
+        await telemetry.flushAndWait()
+
+        // Like a file protected by data protection while the device is locked.
+        let eventsDirectory = directory.appending(path: "events", directoryHint: .isDirectory)
+        let lockedPath = try #require(FileManager.default.contentsOfDirectory(at: eventsDirectory, includingPropertiesForKeys: nil).first)
+            .path(percentEncoded: false)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: lockedPath)
+        await transport.setFailing(false)
+        telemetry.log(.breadcrumb("readable"))
+        await telemetry.flushAndWait()
+        #expect(await transport.sentNames == ["readable"])
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: lockedPath)
+        await telemetry.flushAndWait()
+        #expect(await transport.sentNames == ["readable", "locked"])
+    }
+
+    @Test func theOldestEventsAreDiscardedOverMaxPendingEvents() async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transport = MockTransport()
+        let telemetry = makeDavy(directory: directory, transport: transport, maxPendingEvents: 3)
+
+        for index in 0..<5 {
+            telemetry.log(.breadcrumb("event_\(index)"))
+        }
+        await telemetry.flushAndWait()
+
+        #expect(await transport.sentNames == ["event_2", "event_3", "event_4"])
+        let snapshot = await telemetry.debugSnapshot()
+        #expect(snapshot.loggedCount == 3)
+        #expect(snapshot.sentCount == 3)
+    }
+
+    @Test func eventsInARequestInFlightDontCountTowardsMaxPendingEvents() async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transport = MockTransport()
+        await transport.setDelay(.milliseconds(200))
+        let telemetry = makeDavy(directory: directory, transport: transport, batchSize: 2, maxPendingEvents: 2)
+
+        telemetry.log(.breadcrumb("event_0"))
+        telemetry.log(.breadcrumb("event_1"))
+        #expect(await waitUntil { await transport.attempts == 1 })
+        telemetry.log(.breadcrumb("event_2"))
+        telemetry.log(.breadcrumb("event_3"))
+        await telemetry.flushAndWait()
+
+        #expect(await transport.sentNames == ["event_0", "event_1", "event_2", "event_3"])
+        let snapshot = await telemetry.debugSnapshot()
+        #expect(snapshot.loggedCount == 4)
+        #expect(snapshot.sentCount == 4)
     }
 
     @Test func logIsSafeToCallFromManyThreads() async throws {
@@ -695,6 +804,23 @@ struct DavyTests {
 
         #expect(await throttlingTransport.attempts == 1)
         #expect(await transport.attempts == 0)
+    }
+
+    @Test func pendingEventsAndPausesAreExcludedFromBackups() async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transport = MockTransport()
+        await transport.respond(with: 503, headers: ["Retry-After": "3600"])
+        let telemetry = makeDavy(directory: directory, transport: transport)
+
+        telemetry.log(.breadcrumb("event_0"))
+        await telemetry.flushAndWait()
+
+        let stored = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        #expect(stored.map(\.lastPathComponent).sorted().map { $0.prefix(13) } == ["events", "paused-until-"])
+        for url in stored {
+            #expect(try url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+        }
     }
 
     @Test func retryAfterIsReadAsSecondsOrAnHTTPDate() throws {

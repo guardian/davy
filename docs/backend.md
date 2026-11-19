@@ -2,7 +2,7 @@
 
 Davy is only the client. You run the endpoint, and what's behind it is up to you: a small web service that writes to a database, a serverless function, or a CDN that logs each request straight to a data warehouse. Only the endpoint URL is built into your app, so you can change everything behind it without an app update.
 
-Every platform sends exactly the same requests, defined in an OpenAPI 3.1 document, [`Spec/openapi.yaml`](../Spec/openapi.yaml). Both clients' tests check their requests against it. Use it to check what your endpoint receives, generate server code, or browse the formats in any OpenAPI viewer. To see real requests from your app before your endpoint is ready, send them to the [test server](development.md#trying-the-clients-against-a-server).
+Every platform sends the same requests, defined in an OpenAPI 3.1 document, [`Spec/openapi.yaml`](../Spec/openapi.yaml), apart from how decimal numbers are written; see [Info values](#info-values). Both clients' tests check their requests against it. Use it to check what your endpoint receives, generate server code, or browse the formats in any OpenAPI viewer. To see real requests from your app before your endpoint is ready, send them to the [test server](development.md#trying-the-clients-against-a-server).
 
 Your endpoint should:
 
@@ -74,7 +74,7 @@ Set `batchSize` to `1` to send each event as its own request with a single-eleme
 | `locale` | The device's language and region only, for example `en_GB`, or just the language if there's no region |
 | `info` | The configured `info` and any entries added with `addSessionInfo`, as [info values](#info-values), for additional app and session details; omitted if empty |
 
-The session ID is kept in memory and never reused, so it links events within a session without identifying the user or device across sessions. Events left over from a previous launch are sent in their own request with their original session data, so they're attributed to the app and OS version they were logged in, even after an update.
+The session ID is generated in memory and never reused, so it links events within a session without identifying the user or device across sessions. It's written to disk only with pending events, until they're sent or expire. Events left over from a previous launch are sent in their own request with their original session data, so they're attributed to the app and OS version they were logged in, even after an update.
 
 ## Event fields
 
@@ -127,4 +127,6 @@ CPU and memory are whole numbers, and memory is in whole megabytes. Each key exc
 
 Each `info` value is a JSON string, number, or Boolean, matching the type the app logged, so `"attempt": 2` and `"attempt": "2"` are different values. Store them so you can query numbers as numbers, for example in a JSON column. Numbers beyond ±2^53 may lose precision. A non-finite number is sent as the string `"inf"`, `"-inf"`, or `"nan"`. Davy's own keys are typed too: `duration_ms` and `size` are integers, and diagnostics are as described above.
 
-Versions before 2.0.0 of the spec sent every value as a string.
+Read numbers by their value, not their text. The clients can write the same decimal differently: the Swift client sends `2.0` as `2` and `0.0000001` as `1e-07`, while the Kotlin client sends `2.0` and `1.0E-7`. Any JSON parser reads these as the same values. But a whole decimal from an Apple device looks like an integer, so don't decide from the first values you see whether a key holds integers or decimals, as some databases and search indexes do when they infer a schema. Declare decimal keys as decimals instead.
+
+Versions before 2.0.0 of the spec sent every value as a string. Events stored on a device by an earlier version keep their string values when they're sent after the app updates, so for a while you can receive both `"12"` and `12` for the same key, including the diagnostics.

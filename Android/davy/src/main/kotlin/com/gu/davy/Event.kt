@@ -10,8 +10,9 @@ package com.gu.davy
  *
  * Use [info] for additional details, for example
  * `mapOf("payment_method" to "google_pay", "retries" to 2, "cached" to true)`. Values can be strings,
- * numbers, or Booleans, and are sent as the matching JSON type; any other value is sent as its
- * `toString()`. The same rules apply: no personal data.
+ * numbers, or Booleans, and are sent as the matching JSON type; other text is sent as a string, and
+ * enums as their name. Any other value is dropped with an error in Logcat, rather than sent as its
+ * `toString()`, which could include personal data. The same rules apply: no personal data.
  */
 public sealed class Event {
     public abstract val name: String

@@ -12,6 +12,11 @@ android {
     defaultConfig {
         minSdk = 23
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        aarMetadata {
+            // Davy's API and resources need nothing newer than minSdk, so don't make apps compile
+            // against the newest API level it's built with, which AGP requires by default.
+            minCompileSdk = 23
+        }
     }
 
     compileOptions {

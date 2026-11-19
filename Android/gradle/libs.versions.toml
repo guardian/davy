@@ -1,5 +1,8 @@
 [versions]
 agp = "9.5.1"
+# Before upgrading, check the new OkHttp AAR's minCompileSdk (in
+# META-INF/com/android/build/gradle/aar-metadata.properties). 5.5.1 requires apps to compile against
+# API 37, which would force every app using Davy to do the same; 5.3.2 requires nothing.
 okhttp = "5.3.2"
 junit = "4.13.2"
 json = "20260814"

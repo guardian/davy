@@ -55,26 +55,37 @@ internal class FileEventStore(private val directory: File) {
         fileNames += name
     }
 
-    /** Reads up to [limit] of the oldest events. Unreadable files are discarded. */
+    /**
+     * Reads up to [limit] of the oldest events.
+     *
+     * Empty files, which can never be sent, are discarded. Files that exist but can't be read right
+     * now are kept and skipped, so they're read again next time. They expire after `maxEventAge` if
+     * they never become readable.
+     */
     fun oldest(limit: Int): List<StoredEvent> {
         val events = mutableListOf<StoredEvent>()
-        val unreadable = mutableListOf<String>()
+        val broken = mutableListOf<String>()
+        var unreadableCount = 0
         for (name in fileNames) {
             if (events.size >= limit) break
+            val file = File(directory, name)
             val data = try {
-                File(directory, name).readBytes()
+                file.readBytes()
             } catch (_: IOException) {
                 null
             }
-            if (data == null || data.isEmpty()) {
-                unreadable += name
-            } else {
-                events += StoredEvent(name, loggedAt(name) ?: Long.MIN_VALUE, data)
+            when {
+                data == null && file.exists() -> unreadableCount += 1
+                data == null || data.isEmpty() -> broken += name
+                else -> events += StoredEvent(name, loggedAt(name) ?: Long.MIN_VALUE, data)
             }
         }
-        if (unreadable.isNotEmpty()) {
-            Log.e(TAG, "Discarding ${unreadable.size} unreadable event file(s)")
-            discard(unreadable)
+        if (unreadableCount > 0) {
+            Log.e(TAG, "Couldn't read $unreadableCount event file(s); keeping them to try again later")
+        }
+        if (broken.isNotEmpty()) {
+            Log.e(TAG, "Discarding ${broken.size} empty or missing event file(s)")
+            discard(broken)
         }
         return events
     }
@@ -95,6 +106,24 @@ internal class FileEventStore(private val directory: File) {
         if (expired.isEmpty()) return
         Log.i(TAG, "Pruning ${expired.size} expired event(s)")
         discard(expired)
+    }
+
+    /** Deletes every event. */
+    fun discardAll() {
+        discard(fileNames.toList())
+    }
+
+    /**
+     * Deletes the oldest events until at most [limit] remain, not counting [excluding], such as
+     * events in a request in flight. Returns how many were deleted.
+     */
+    fun discardOldest(limit: Int, excluding: Set<String>): Int {
+        val candidates = fileNames.filter { it !in excluding }
+        val excess = candidates.size - limit
+        if (excess <= 0) return 0
+        val count = fileNames.size
+        discard(candidates.take(excess))
+        return count - fileNames.size
     }
 
     private fun discard(names: Collection<String>) {

@@ -12,20 +12,36 @@ Delivery works the same way on every platform.
 - On launch, for any events left over from a previous session.
 - When `flush()` or `flushAndWait()` is called.
 
-None of these send anything while sending is stopped; see [Turning sending off](#turning-sending-off).
+None of these send anything unless the instance is in full mode; see [Turning Davy off](#turning-davy-off).
 
 The debounce timer restarts with every event, so in a busy session events can wait until `batchSize` are pending or the app moves to the background. Lower `debounceInterval` and `batchSize` if you need events sooner; with a `batchSize` of 1, each event is sent as soon as it's logged.
 
-## Turning sending off
+## Turning Davy off
 
-`stop()` and `start()` work as a kill switch, for example driven by remote config. Set `sendsEvents` to `false` to create an instance that starts stopped.
+Each instance is in one of three modes:
+
+| Mode | Swift, Kotlin | Stores events | Sends events |
+| --- | --- | --- | --- |
+| Full (the default) | `.full`, `FULL` | Yes | Yes |
+| Local only | `.localOnly`, `LOCAL_ONLY` | Yes, and shows them on the debug screen | No |
+| Off | `.off`, `OFF` | No | No |
+
+Set the mode an instance starts in with `initialMode`, and change it with `start()` and `stop()`, for example from remote config as a kill switch, or when the user gives or withdraws consent:
 
 ```swift
-telemetry.stop()   // Events are still logged and stored, but not sent
-telemetry.start()  // Sends everything stored while stopped, then carries on as normal
+telemetry.stop()                 // Local only: events are still logged and stored, but not sent
+telemetry.stop(deleteAll: true)  // Off: deletes every stored event, and stores no more
+telemetry.start()                // Full: sends anything stored, then carries on as normal
 ```
 
-While stopped, events are still written to disk and shown on the debug screen, and `flush()` and `flushAndWait()` return without sending. A request already in flight when `stop()` is called finishes, but no more are made. Events stored while stopped are discarded if they're older than `maxEventAge` by the time sending starts. Whether sending is stopped isn't remembered across launches, so set `sendsEvents` from your remote config's cached value each launch.
+In Kotlin, it's `telemetry.stop(deleteAll = true)`.
+
+While not in full mode, `flush()` and `flushAndWait()` return without sending. A request already in flight when `stop()` is called finishes, but no more are made.
+
+- **Local only.** Events stored while stopped are sent once `start()` is called, unless they're older than `maxEventAge` by then, and only the newest `maxPendingEvents` are kept.
+- **Off.** `log` does nothing, so events logged while off are lost, but `addSessionInfo` still updates the session for events logged later. `stop(deleteAll: true)` deletes every event waiting to be sent, including any in a request in flight so it can't be retried, and the debug history of sent events and requests. Starting an instance in off mode with `initialMode` doesn't delete anything: events stored by an earlier launch are kept until sending starts or they expire, so call `stop(deleteAll: true)` to delete them.
+
+The mode isn't remembered across launches, so set `initialMode` each launch from your remote config's or consent manager's cached value.
 
 ## Delivery guarantees
 
@@ -40,8 +56,10 @@ Events are discarded without being delivered when:
 - Their name is invalid and `onInvalidEventName` is set to log an error or ignore them.
 - They're over `maxEventSize`, and so is the error that would replace them.
 - They're older than `maxEventAge` (default 30 days).
+- They're logged while the instance is off, or deleted with `stop(deleteAll: true)`; see [Turning Davy off](#turning-davy-off).
+- More than `maxPendingEvents` (default 1,000) are waiting to be sent, for example after a long outage or while sending is stopped. The oldest are discarded first, and an error is logged the first time.
 - The server permanently rejects them; see below.
-- They can't be written to or read from disk, for example because the disk is full. An error is logged to the console or Logcat.
+- They can't be written to disk, for example because the disk is full, or their file is later found empty or missing. An error is logged to the console or Logcat. A file that exists but can't be read for now, for example because data protection locks it while the device is locked, is kept and read again later.
 
 ## Responses and retries
 

@@ -40,17 +40,21 @@ import kotlin.time.Duration.Companion.seconds
  * @property debounceInterval How long to wait after the most recent event before sending a
  *   partially filled batch.
  * @property maxEventAge Events older than this are discarded without being sent.
+ * @property maxPendingEvents The most events kept waiting to be sent, not counting any in a request
+ *   in flight. Once there are more, the oldest are discarded, so a long outage, or sending being
+ *   stopped, can't fill the disk. Values below 1 are treated as 1. Defaults to 1,000.
  * @property storageDirectory The directory where pending events are stored, or `null` for
- *   [Davy.defaultStorageDirectory]. Each [Davy] instance should use its own directory.
+ *   [Davy.defaultStorageDirectory]. Each [Davy] instance should use its own directory. Choose one in
+ *   [android.content.Context.getNoBackupFilesDir], as the default is, so pending events are never
+ *   restored onto another device; Davy can't exclude other directories from Auto Backup.
  * @property debugHistoryLimit How many sent events, and how many requests, to keep in memory for
  *   [Davy.debugSnapshot] and [DavyDebugActivity]. The oldest are dropped once there are more. `0`
  *   keeps none. The history isn't stored on disk, so it starts empty each time an instance is
  *   created. Each request is kept with its body, so lower this if memory is tight.
  * @property allowsInsecureHttp Allows plain HTTP for development. Defaults to `false`.
- * @property sendsEvents Whether events are sent to [endpoint] when the instance is created. When
- *   `false`, events are still logged, stored on disk, and shown in [DavyDebugActivity], but nothing
- *   is sent until [Davy.start] is called. Use it with [Davy.start] and [Davy.stop] as a kill
- *   switch, for example driven by remote config. Defaults to `true`.
+ * @property initialMode Whether the instance stores and sends events when it's created. Change it
+ *   later with [Davy.start] and [Davy.stop], for example from remote config as a kill switch, or
+ *   when the user gives or withdraws consent. Defaults to [Mode.FULL].
  */
 public data class DavyConfiguration(
     val endpoint: URI,
@@ -63,11 +67,31 @@ public data class DavyConfiguration(
     val batchSize: Int = 100,
     val debounceInterval: Duration = 10.seconds,
     val maxEventAge: Duration = 30.days,
+    val maxPendingEvents: Int = 1000,
     val storageDirectory: File? = null,
     val debugHistoryLimit: Int = 200,
     val allowsInsecureHttp: Boolean = false,
-    val sendsEvents: Boolean = true,
-)
+    val initialMode: Mode = Mode.FULL,
+) {
+    /**
+     * Whether an instance stores and sends events. Set the mode an instance starts in with
+     * [initialMode], and change it with [Davy.start] and [Davy.stop]. The mode isn't remembered
+     * across launches.
+     */
+    public enum class Mode {
+        /**
+         * Events aren't stored or sent: [Davy.log] does nothing. Events already stored, for example
+         * by an earlier launch, are kept until sending starts or they expire.
+         */
+        OFF,
+
+        /** Events are stored on disk and shown in [DavyDebugActivity], but not sent until [Davy.start] is called. */
+        LOCAL_ONLY,
+
+        /** Events are stored and sent. */
+        FULL,
+    }
+}
 
 /**
  * What [Davy.log] does with an event whose name isn't lower snake case: lowercase ASCII letters and

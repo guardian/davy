@@ -6,13 +6,13 @@ The Swift package supports iOS 18 or later and macOS 15 or later, including app 
 
 Add Davy with Swift Package Manager.
 
-In Xcode, choose **File > Add Package Dependencies…**, enter `https://github.com/guardian/davy`, and add the **Davy** library to your app target and to any app extension targets that log events.
+In Xcode, choose **File > Add Package Dependencies…**, enter `https://github.com/guardian/davy`, choose **Up to Next Major Version**, and add the **Davy** library to your app target and to any app extension targets that log events.
 
 Or, in `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/guardian/davy.git", branch: "main"),
+    .package(url: "https://github.com/guardian/davy.git", from: "1.0.0"),
 ],
 targets: [
     .target(
@@ -123,7 +123,7 @@ Or present `DavyDebugView(telemetry: telemetry)` yourself. It has its own `Navig
 ## How it behaves on Apple platforms
 
 - **Backgrounding.** Pending events are sent when the app moves to the background (iOS) or resigns active (macOS). On iOS, the system is asked for extra time to finish sending. App extensions aren't flushed automatically.
-- **Storage.** Pending events are stored in `Application Support/<bundle identifier>/Davy`, from `DavyConfiguration.defaultStorageDirectory`.
+- **Storage.** Pending events are stored in `Application Support/<bundle identifier>/Davy`, from `DavyConfiguration.defaultStorageDirectory`. They're excluded from iCloud and device backups, and Time Machine on macOS, wherever `storageDirectory` points, so they're never restored onto another device.
 - **Invalid names.** With `onInvalidEventName: .crash`, `log(_:)` stops the app with `fatalError`.
 - **Environment.** TestFlight and App Store builds share a binary, so telling them apart for `environment` needs a runtime check or a separate build configuration.
 - **Session data.** `appVersion` and `build` are the main bundle's `CFBundleShortVersionString` and `CFBundleVersion`. `os` is `iOS`, `macOS`, `macCatalyst`, `visionOS`, `tvOS`, or `watchOS`, and `deviceModel` is the hardware model identifier, such as `iPhone17,1`, or `Simulator`.

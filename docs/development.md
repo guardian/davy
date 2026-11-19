@@ -20,11 +20,13 @@ The Swift library has no runtime dependencies. Android uses OkHttp for its isola
 Both clients' tests check what they send against `Spec/`:
 
 - **The spec.** Every kind of event is sent through each client, and each request is checked against the spec's schemas. The tests also check that each status code is handled as the spec describes.
-- **The fixtures.** Each client must build the requests in `fixtures.json` exactly, byte for byte, which catches differences the spec allows, such as encoding and key order.
+- **The fixtures.** Each client must build the requests in `fixtures.json` exactly, byte for byte, which catches differences the spec allows, such as encoding and key order. The one known difference is how decimals are written, for example `2` from Swift and `2.0` from Kotlin, so fixtures only use decimals both write the same way, such as `0.25`.
 
 So a change to what Davy sends means changing the spec, the fixtures, and both clients together. Changes to how Davy behaves, such as delivery and retries, should also be made in both clients; each client's behavior tests mirror the other's.
 
 ## Running the tests
+
+GitHub Actions runs every check below on each pull request and push to `main`; see [`.github/workflows/test.yml`](../.github/workflows/test.yml). The Android device tests run on an API 35 emulator, and the Swift tests on GitHub's `xcode-27` image.
 
 ### Swift
 
@@ -58,7 +60,7 @@ To lint the OpenAPI document after changing it (requires Node.js):
 npx @redocly/cli lint Spec/openapi.yaml
 ```
 
-It reports two expected warnings: there's no license, and the server is `example.com`.
+It reports one expected warning: the server is `example.com`.
 
 ### The test server
 

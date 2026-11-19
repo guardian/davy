@@ -19,7 +19,7 @@ telemetry.log(Event.Breadcrumb("payment_selected", mapOf("payment_method" to "go
 telemetry.log(Event.Error("payment_declined", mapOf("reason" to "card_expired", "attempt" to 2, "saved_card" to true)))
 ```
 
-Values are sent as the matching JSON type, so you can sum or average numbers in your backend. In Swift, literals convert automatically, and variables are wrapped with `.string(_:)`, `.int(_:)`, `.double(_:)`, or `.bool(_:)`, for example `["attempt": .int(attempt)]`. In Kotlin, any other value is sent as its `toString()`.
+Values are sent as the matching JSON type, so you can sum or average numbers in your backend. In Swift, literals convert automatically, and variables are wrapped with `.string(_:)`, `.int(_:)`, `.double(_:)`, or `.bool(_:)`, for example `["attempt": .int(attempt)]`. In Kotlin, other text is sent as a string and enums as their name. Any other value, such as a data class, is dropped with an error in Logcat rather than sent as its `toString()`, which could include personal data.
 
 Logging returns immediately and is safe from any thread. Each event is written to disk, then sent in the background; see [How delivery works](delivery.md).
 

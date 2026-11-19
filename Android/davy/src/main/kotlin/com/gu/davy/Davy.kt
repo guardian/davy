@@ -46,7 +46,7 @@ public class Davy internal constructor(
 ) : Closeable {
     /**
      * Creates an instance with a new session and starts sending any events left over from a
-     * previous session, unless [DavyConfiguration.sendsEvents] is `false`.
+     * previous session, unless [DavyConfiguration.initialMode] says not to.
      */
     public constructor(context: Context, configuration: DavyConfiguration) : this(
         configuration = configuration,
@@ -56,7 +56,11 @@ public class Davy internal constructor(
         retryPolicy = RetryPolicy(),
         captureDiagnostics = Diagnostics(context.applicationContext)::capture,
         lifecycle = (context.applicationContext as? Application)?.let(::ActivityLifecycleSource),
-    )
+    ) {
+        if (!OkHttpTransport.allows(configuration.endpoint, configuration.allowsInsecureHttp)) {
+            Log.e(TAG, "Davy's endpoint ${configuration.endpoint} isn't HTTPS, so events will be stored but never sent. Use an https URL, or set allowsInsecureHttp during development.")
+        }
+    }
 
     /**
      * A random identifier sent with this instance's events, as the request's `session.id`.
@@ -158,26 +162,33 @@ public class Davy internal constructor(
     }
 
     /**
-     * Starts sending events, including any logged while sending was stopped.
+     * Starts storing and sending events, including any stored while stopped: the
+     * [DavyConfiguration.Mode.FULL] mode.
      *
-     * Use it with [stop] and [DavyConfiguration.sendsEvents] as a kill switch, for example driven by
-     * remote config. Calling it while already sending does nothing. Any retry backoff or
-     * server-requested pause still in effect is respected.
+     * Use it with [stop] and [DavyConfiguration.initialMode], for example from remote config as a
+     * kill switch, or when the user gives consent. Calling it while already sending does nothing.
+     * Any retry backoff or server-requested pause still in effect is respected.
      */
     public fun start() {
-        pipeline.setSendingEnabled(true)
+        pipeline.setMode(DavyConfiguration.Mode.FULL, deletingEvents = false)
     }
 
     /**
-     * Stops sending events. Events are still logged, stored on disk, and shown in
-     * [DavyDebugActivity], and are sent once [start] is called, unless they're older than
-     * [DavyConfiguration.maxEventAge] by then.
+     * Stops sending events.
      *
-     * A request already in flight finishes, but no more are made. Calling it while already stopped
-     * does nothing.
+     * By default, this is the [DavyConfiguration.Mode.LOCAL_ONLY] mode: events are still logged,
+     * stored on disk, and shown in [DavyDebugActivity], and are sent once [start] is called, unless
+     * they're older than [DavyConfiguration.maxEventAge] by then.
+     *
+     * With [deleteAll] set, this is the [DavyConfiguration.Mode.OFF] mode instead: every event
+     * waiting to be sent, and the debug history of sent events and requests, is deleted, and events
+     * logged from now on aren't stored. Use it, for example, when the user withdraws consent.
+     *
+     * Either way, a request already in flight finishes, but no more are made.
      */
-    public fun stop() {
-        pipeline.setSendingEnabled(false)
+    public fun stop(deleteAll: Boolean = false) {
+        val mode = if (deleteAll) DavyConfiguration.Mode.OFF else DavyConfiguration.Mode.LOCAL_ONLY
+        pipeline.setMode(mode, deletingEvents = deleteAll)
     }
 
     /**

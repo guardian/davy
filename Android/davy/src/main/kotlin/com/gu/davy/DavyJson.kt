@@ -100,8 +100,11 @@ internal object DavyJson {
     )
 
     /** Reads `info`, including values stored as strings by earlier versions. */
-    private fun parseInfo(json: JSONObject): Map<String, Any> =
-        json.keys().asSequence().associateWith { key -> InfoValues.normalize(json.get(key)) }
+    private fun parseInfo(json: JSONObject): Map<String, Any> = buildMap {
+        for (key in json.keys()) {
+            InfoValues.normalize(json.get(key))?.let { put(key, it) }
+        }
+    }
 
     private fun JSONObject.stringOrNull(key: String): String? = if (isNull(key)) null else getString(key)
 

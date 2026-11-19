@@ -64,9 +64,15 @@ public struct DavyConfiguration: Sendable {
     /// Events older than this are discarded without being sent.
     public var maxEventAge: Duration
 
+    /// The most events kept waiting to be sent, not counting any in a request in flight. Once there
+    /// are more, the oldest are discarded, so a long outage, or sending being stopped, can't fill
+    /// the disk. Values below 1 are treated as 1.
+    public var maxPendingEvents: Int
+
     /// The directory where pending events are stored.
     ///
-    /// Each ``Davy`` instance should use its own directory.
+    /// Each ``Davy`` instance should use its own directory. The files Davy stores here are excluded
+    /// from iCloud and device backups, so pending events are never restored onto another device.
     public var storageDirectory: URL
 
     /// How many sent events, and how many requests, to keep in memory for
@@ -77,12 +83,12 @@ public struct DavyConfiguration: Sendable {
     /// request is kept with its body, so lower this if memory is tight.
     public var debugHistoryLimit: Int
 
-    /// Whether events are sent to ``endpoint`` when the instance is created.
+    /// Whether the instance stores and sends events when it's created. Defaults to
+    /// ``Mode/full``.
     ///
-    /// When `false`, events are still logged and stored on disk, and shown in ``DavyDebugView``,
-    /// but nothing is sent until ``Davy/start()`` is called. Use it with ``Davy/start()`` and
-    /// ``Davy/stop()`` as a kill switch, for example driven by remote config.
-    public var sendsEvents: Bool
+    /// Change it later with ``Davy/start()`` and ``Davy/stop(deleteAll:)``, for example from remote
+    /// config as a kill switch, or when the user gives or withdraws consent.
+    public var initialMode: Mode
 
     /// Creates a configuration.
     ///
@@ -100,10 +106,13 @@ public struct DavyConfiguration: Sendable {
     ///   - batchSize: The number of pending events that triggers a send. Defaults to 100.
     ///   - debounceInterval: How long to wait after the most recent event before sending. Defaults to 10 seconds.
     ///   - maxEventAge: How long unsent events are kept. Defaults to 30 days.
+    ///   - maxPendingEvents: The most events kept waiting to be sent; the oldest are discarded once
+    ///     there are more. Defaults to 1,000.
     ///   - storageDirectory: Where events are persisted. Defaults to ``defaultStorageDirectory``.
     ///   - debugHistoryLimit: How many sent events and requests to keep in memory for debugging. Defaults to 200.
     ///   - allowsInsecureHTTP: Whether to allow plain HTTP for development. Defaults to `false`.
-    ///   - sendsEvents: Whether events are sent when the instance is created. Defaults to `true`.
+    ///   - initialMode: Whether events are stored and sent when the instance is created. Defaults to
+    ///     ``Mode/full``.
     public init(
         endpoint: URL,
         environment: String? = nil,
@@ -115,10 +124,11 @@ public struct DavyConfiguration: Sendable {
         batchSize: Int = 100,
         debounceInterval: Duration = .seconds(10),
         maxEventAge: Duration = .seconds(30 * 24 * 60 * 60),
+        maxPendingEvents: Int = 1000,
         storageDirectory: URL = DavyConfiguration.defaultStorageDirectory,
         debugHistoryLimit: Int = 200,
         allowsInsecureHTTP: Bool = false,
-        sendsEvents: Bool = true
+        initialMode: Mode = .full
     ) {
         self.endpoint = endpoint
         self.allowsInsecureHTTP = allowsInsecureHTTP
@@ -131,9 +141,10 @@ public struct DavyConfiguration: Sendable {
         self.batchSize = batchSize
         self.debounceInterval = debounceInterval
         self.maxEventAge = maxEventAge
+        self.maxPendingEvents = maxPendingEvents
         self.storageDirectory = storageDirectory
         self.debugHistoryLimit = debugHistoryLimit
-        self.sendsEvents = sendsEvents
+        self.initialMode = initialMode
     }
 
     /// `Application Support/<bundle identifier>/Davy`.
@@ -145,6 +156,21 @@ public struct DavyConfiguration: Sendable {
 }
 
 extension DavyConfiguration {
+    /// Whether an instance stores and sends events.
+    ///
+    /// Set the mode an instance starts in with ``DavyConfiguration/initialMode``, and change it with
+    /// ``Davy/start()`` and ``Davy/stop(deleteAll:)``. The mode isn't remembered across launches.
+    public enum Mode: Sendable, Hashable {
+        /// Events aren't stored or sent: ``Davy/log(_:)`` does nothing. Events already stored, for
+        /// example by an earlier launch, are kept until sending starts or they expire.
+        case off
+        /// Events are stored on disk and shown in ``DavyDebugView``, but not sent until
+        /// ``Davy/start()`` is called.
+        case localOnly
+        /// Events are stored and sent.
+        case full
+    }
+
     /// What ``Davy/log(_:)`` does with an event whose name isn't lower snake case.
     ///
     /// A lower snake case name is lowercase ASCII letters and digits in words separated by single

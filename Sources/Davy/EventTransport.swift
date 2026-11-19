@@ -31,8 +31,7 @@ struct URLSessionTransport: EventTransport {
     var allowsInsecureHTTP = false
 
     func send(_ request: URLRequest) async throws -> HTTPURLResponse {
-        let scheme = request.url?.scheme?.lowercased()
-        guard scheme == "https" || (allowsInsecureHTTP && scheme == "http") else {
+        guard let url = request.url, Self.allows(url, allowsInsecureHTTP: allowsInsecureHTTP) else {
             throw DavyError.insecureEndpoint
         }
         let (_, response) = try await session.data(for: request)
@@ -40,6 +39,13 @@ struct URLSessionTransport: EventTransport {
             throw DavyError.invalidResponse
         }
         return response
+    }
+
+    /// Whether requests can be sent to `url`: always over HTTPS, and over plain HTTP only when
+    /// `allowsInsecureHTTP` is set.
+    static func allows(_ url: URL, allowsInsecureHTTP: Bool) -> Bool {
+        let scheme = url.scheme?.lowercased()
+        return scheme == "https" || (allowsInsecureHTTP && scheme == "http")
     }
 }
 

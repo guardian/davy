@@ -1,6 +1,6 @@
 # Setting up on Android
 
-The Kotlin library supports Android 6.0 (API 23) or later. Building it needs JDK 17 or later, such as the one bundled with Android Studio.
+The Kotlin library supports Android 6.0 (API 23) or later. Apps that use it must compile against API 34 or later (`compileSdk = 34`), which AndroidX Startup, used by OkHttp, requires. Building Davy itself needs JDK 17 or later, such as the one bundled with Android Studio.
 
 ## Installation
 
@@ -61,7 +61,7 @@ Or use `DavyDebugActivity.intent(context, telemetry)` to start it some other way
 ## How it behaves on Android
 
 - **Backgrounding.** The app is in the background once none of its activities are started; an activity being recreated, such as on rotation, doesn't count. Pending events are sent then. Android can suspend the app soon after, so this is best effort, and anything not sent is sent on the next launch.
-- **Storage.** Pending events are stored in `davy` in the app's no-backup files directory, from `Davy.defaultStorageDirectory(context)`, so they're never backed up.
+- **Storage.** Pending events are stored in `davy` in the app's no-backup files directory, from `Davy.defaultStorageDirectory(context)`, so they're never backed up. If you set `storageDirectory`, choose a directory in `noBackupFilesDir` too, since Davy can't exclude other directories from Auto Backup.
 - **Coroutines.** `flushAndWait()` and `debugSnapshot()` are `suspend` functions, and the block passed to `measure` can suspend when called from a coroutine. Davy itself doesn't depend on kotlinx.coroutines.
 - **Stopping.** `close()` stops an instance, for example at the end of a test. Its pending events stay on disk.
 - **Invalid names.** With `onInvalidEventName = InvalidEventNameAction.CRASH`, `log` throws an `IllegalArgumentException`.
