@@ -1,0 +1,313 @@
+// Signature format: 4.0
+package com.gu.davy {
+
+  public final class Davy implements java.io.Closeable {
+    ctor public Davy(android.content.Context context, com.gu.davy.DavyConfiguration configuration);
+    method public java.io.Closeable addDebugListener(kotlin.jvm.functions.Function1<? super com.gu.davy.DavyDebugSnapshot,kotlin.Unit> listener);
+    method public void addSessionInfo(java.util.Map<java.lang.String,?> info);
+    method public void clearDebugHistory();
+    method public void close();
+    method public suspend Object? debugSnapshot(kotlin.coroutines.Continuation<? super com.gu.davy.DavyDebugSnapshot>);
+    method public void flush();
+    method public suspend Object? flushAndWait(kotlin.coroutines.Continuation<? super kotlin.Unit>);
+    method @InaccessibleFromKotlin public com.gu.davy.DavyConfiguration getConfiguration();
+    method @InaccessibleFromKotlin public java.util.UUID getSessionId();
+    method public void log(com.gu.davy.Event event);
+    method public void log(Throwable error, String name, optional java.util.Map<java.lang.String,?> info);
+    method public inline <T> T measure(String name, kotlin.jvm.functions.Function0<? extends T> block);
+    method public void start();
+    method public void stop(optional boolean deleteAll);
+    property public com.gu.davy.DavyConfiguration configuration;
+    property public java.util.UUID sessionId;
+    field public static final com.gu.davy.Davy.Companion Companion;
+  }
+
+  public static final class Davy.Companion {
+    method public java.io.File defaultStorageDirectory(android.content.Context context);
+  }
+
+  public final class DavyConfiguration {
+    ctor @KotlinOnly public DavyConfiguration(java.net.URI endpoint, optional String? environment, optional java.util.Map<java.lang.String,java.lang.Object> info, optional com.gu.davy.InvalidEventNameAction onInvalidEventName, optional int maxEventSize, optional boolean logsAppLifecycleEvents, optional java.util.Map<java.lang.String,java.lang.String> headers, optional int batchSize, optional kotlin.time.Duration debounceInterval, optional kotlin.time.Duration maxEventAge, optional int maxPendingEvents, optional java.io.File? storageDirectory, optional int debugHistoryLimit, optional boolean allowsInsecureHttp, optional com.gu.davy.DavyConfiguration.Mode initialMode);
+    method public java.net.URI component1();
+    method @KotlinOnly public operator kotlin.time.Duration component10();
+    method public int component11();
+    method public java.io.File? component12();
+    method public int component13();
+    method public boolean component14();
+    method public com.gu.davy.DavyConfiguration.Mode component15();
+    method public String? component2();
+    method public java.util.Map<java.lang.String,java.lang.Object> component3();
+    method public com.gu.davy.InvalidEventNameAction component4();
+    method public int component5();
+    method public boolean component6();
+    method public java.util.Map<java.lang.String,java.lang.String> component7();
+    method public int component8();
+    method @KotlinOnly public operator kotlin.time.Duration component9();
+    method @KotlinOnly public com.gu.davy.DavyConfiguration copy(optional java.net.URI endpoint, optional String? environment, optional java.util.Map<java.lang.String,java.lang.Object> info, optional com.gu.davy.InvalidEventNameAction onInvalidEventName, optional int maxEventSize, optional boolean logsAppLifecycleEvents, optional java.util.Map<java.lang.String,java.lang.String> headers, optional int batchSize, optional kotlin.time.Duration debounceInterval, optional kotlin.time.Duration maxEventAge, optional int maxPendingEvents, optional java.io.File? storageDirectory, optional int debugHistoryLimit, optional boolean allowsInsecureHttp, optional com.gu.davy.DavyConfiguration.Mode initialMode);
+    method @InaccessibleFromKotlin public boolean getAllowsInsecureHttp();
+    method @InaccessibleFromKotlin public int getBatchSize();
+    method @InaccessibleFromKotlin public int getDebugHistoryLimit();
+    method @InaccessibleFromKotlin public java.net.URI getEndpoint();
+    method @InaccessibleFromKotlin public String? getEnvironment();
+    method @InaccessibleFromKotlin public java.util.Map<java.lang.String,java.lang.String> getHeaders();
+    method @InaccessibleFromKotlin public java.util.Map<java.lang.String,java.lang.Object> getInfo();
+    method @InaccessibleFromKotlin public com.gu.davy.DavyConfiguration.Mode getInitialMode();
+    method @InaccessibleFromKotlin public boolean getLogsAppLifecycleEvents();
+    method @InaccessibleFromKotlin public int getMaxEventSize();
+    method @InaccessibleFromKotlin public int getMaxPendingEvents();
+    method @InaccessibleFromKotlin public com.gu.davy.InvalidEventNameAction getOnInvalidEventName();
+    method @InaccessibleFromKotlin public java.io.File? getStorageDirectory();
+    property public boolean allowsInsecureHttp;
+    property public int batchSize;
+    property public kotlin.time.Duration debounceInterval;
+    property public int debugHistoryLimit;
+    property public java.net.URI endpoint;
+    property public String? environment;
+    property public java.util.Map<java.lang.String,java.lang.String> headers;
+    property public java.util.Map<java.lang.String,java.lang.Object> info;
+    property public com.gu.davy.DavyConfiguration.Mode initialMode;
+    property public boolean logsAppLifecycleEvents;
+    property public kotlin.time.Duration maxEventAge;
+    property public int maxEventSize;
+    property public int maxPendingEvents;
+    property public com.gu.davy.InvalidEventNameAction onInvalidEventName;
+    property public java.io.File? storageDirectory;
+  }
+
+  public enum DavyConfiguration.Mode {
+    enum_constant public static final com.gu.davy.DavyConfiguration.Mode FULL;
+    enum_constant public static final com.gu.davy.DavyConfiguration.Mode LOCAL_ONLY;
+    enum_constant public static final com.gu.davy.DavyConfiguration.Mode OFF;
+  }
+
+  public final class DavyDebugActivity extends android.app.Activity {
+    ctor public DavyDebugActivity();
+    field public static final com.gu.davy.DavyDebugActivity.Companion Companion;
+  }
+
+  public static final class DavyDebugActivity.Companion {
+    method public android.content.Intent intent(android.content.Context context, com.gu.davy.Davy telemetry);
+    method public void start(android.content.Context context, com.gu.davy.Davy telemetry);
+  }
+
+  public final class DavyDebugSnapshot {
+    ctor public DavyDebugSnapshot(java.util.List<com.gu.davy.DavyDebugSnapshot.LoggedEvent> pending, java.util.List<com.gu.davy.DavyDebugSnapshot.SentEvent> sent, java.util.List<com.gu.davy.DavyDebugSnapshot.Request> requests, int loggedCount, int sentCount, com.gu.davy.DavyDebugSnapshot.Failure? lastFailure, java.util.List<com.gu.davy.DavyDebugSnapshot.Activity> activity, java.util.List<com.gu.davy.DavyDebugSnapshot.SessionStart> sessionStarts);
+    method public java.util.List<com.gu.davy.DavyDebugSnapshot.LoggedEvent> component1();
+    method public java.util.List<com.gu.davy.DavyDebugSnapshot.SentEvent> component2();
+    method public java.util.List<com.gu.davy.DavyDebugSnapshot.Request> component3();
+    method public int component4();
+    method public int component5();
+    method public com.gu.davy.DavyDebugSnapshot.Failure? component6();
+    method public java.util.List<com.gu.davy.DavyDebugSnapshot.Activity> component7();
+    method public java.util.List<com.gu.davy.DavyDebugSnapshot.SessionStart> component8();
+    method public com.gu.davy.DavyDebugSnapshot copy(optional java.util.List<com.gu.davy.DavyDebugSnapshot.LoggedEvent> pending, optional java.util.List<com.gu.davy.DavyDebugSnapshot.SentEvent> sent, optional java.util.List<com.gu.davy.DavyDebugSnapshot.Request> requests, optional int loggedCount, optional int sentCount, optional com.gu.davy.DavyDebugSnapshot.Failure? lastFailure, optional java.util.List<com.gu.davy.DavyDebugSnapshot.Activity> activity, optional java.util.List<com.gu.davy.DavyDebugSnapshot.SessionStart> sessionStarts);
+    method @InaccessibleFromKotlin public java.util.List<com.gu.davy.DavyDebugSnapshot.Activity> getActivity();
+    method @InaccessibleFromKotlin public com.gu.davy.DavyDebugSnapshot.Failure? getLastFailure();
+    method @InaccessibleFromKotlin public int getLoggedCount();
+    method @InaccessibleFromKotlin public java.util.List<com.gu.davy.DavyDebugSnapshot.LoggedEvent> getPending();
+    method @InaccessibleFromKotlin public java.util.List<com.gu.davy.DavyDebugSnapshot.Request> getRequests();
+    method @InaccessibleFromKotlin public java.util.List<com.gu.davy.DavyDebugSnapshot.SentEvent> getSent();
+    method @InaccessibleFromKotlin public int getSentCount();
+    method @InaccessibleFromKotlin public java.util.List<com.gu.davy.DavyDebugSnapshot.SessionStart> getSessionStarts();
+    property public java.util.List<com.gu.davy.DavyDebugSnapshot.Activity> activity;
+    property public com.gu.davy.DavyDebugSnapshot.Failure? lastFailure;
+    property public int loggedCount;
+    property public java.util.List<com.gu.davy.DavyDebugSnapshot.LoggedEvent> pending;
+    property public java.util.List<com.gu.davy.DavyDebugSnapshot.Request> requests;
+    property public java.util.List<com.gu.davy.DavyDebugSnapshot.SentEvent> sent;
+    property public int sentCount;
+    property public java.util.List<com.gu.davy.DavyDebugSnapshot.SessionStart> sessionStarts;
+    field public static final com.gu.davy.DavyDebugSnapshot.Companion Companion;
+  }
+
+  public static final class DavyDebugSnapshot.Activity {
+    ctor public DavyDebugSnapshot.Activity(long minuteMillis, int logged, int sent);
+    method public long component1();
+    method public int component2();
+    method public int component3();
+    method public com.gu.davy.DavyDebugSnapshot.Activity copy(optional long minuteMillis, optional int logged, optional int sent);
+    method @InaccessibleFromKotlin public int getLogged();
+    method @InaccessibleFromKotlin public long getMinuteMillis();
+    method @InaccessibleFromKotlin public int getSent();
+    property public int logged;
+    property public long minuteMillis;
+    property public int sent;
+  }
+
+  public static final class DavyDebugSnapshot.Companion {
+    method @InaccessibleFromKotlin public com.gu.davy.DavyDebugSnapshot getEMPTY();
+    property public com.gu.davy.DavyDebugSnapshot EMPTY;
+  }
+
+  public static final class DavyDebugSnapshot.Failure {
+    ctor public DavyDebugSnapshot.Failure(String reason, long dateMillis);
+    method public String component1();
+    method public long component2();
+    method public com.gu.davy.DavyDebugSnapshot.Failure copy(optional String reason, optional long dateMillis);
+    method @InaccessibleFromKotlin public long getDateMillis();
+    method @InaccessibleFromKotlin public String getReason();
+    property public long dateMillis;
+    property public String reason;
+  }
+
+  public static final class DavyDebugSnapshot.LoggedEvent {
+    method @InaccessibleFromKotlin public com.gu.davy.Event getEvent();
+    method @InaccessibleFromKotlin public java.util.UUID getId();
+    method @InaccessibleFromKotlin public java.util.Map<java.lang.String,java.lang.Object> getInfo();
+    method @InaccessibleFromKotlin public String getName();
+    method @InaccessibleFromKotlin public java.util.UUID getSessionId();
+    method @InaccessibleFromKotlin public java.util.Map<java.lang.String,java.lang.Object> getSessionInfo();
+    method @InaccessibleFromKotlin public long getTimestampMillis();
+    method @InaccessibleFromKotlin public boolean isError();
+    property public com.gu.davy.Event event;
+    property public java.util.UUID id;
+    property public java.util.Map<java.lang.String,java.lang.Object> info;
+    property public boolean isError;
+    property public String name;
+    property public java.util.UUID sessionId;
+    property public java.util.Map<java.lang.String,java.lang.Object> sessionInfo;
+    property public long timestampMillis;
+  }
+
+  public static final class DavyDebugSnapshot.Request {
+    ctor public DavyDebugSnapshot.Request(java.util.UUID id, java.util.Map<java.lang.String,java.lang.String> headers, String body, java.util.List<java.util.UUID> eventIds, long sentAtMillis, long durationMillis, Integer? statusCode, com.gu.davy.DavyDebugSnapshot.Request.Outcome outcome);
+    method public java.util.UUID component1();
+    method public java.util.Map<java.lang.String,java.lang.String> component2();
+    method public String component3();
+    method public java.util.List<java.util.UUID> component4();
+    method public long component5();
+    method public long component6();
+    method public Integer? component7();
+    method public com.gu.davy.DavyDebugSnapshot.Request.Outcome component8();
+    method public com.gu.davy.DavyDebugSnapshot.Request copy(optional java.util.UUID id, optional java.util.Map<java.lang.String,java.lang.String> headers, optional String body, optional java.util.List<java.util.UUID> eventIds, optional long sentAtMillis, optional long durationMillis, optional Integer? statusCode, optional com.gu.davy.DavyDebugSnapshot.Request.Outcome outcome);
+    method @InaccessibleFromKotlin public String getBody();
+    method @InaccessibleFromKotlin public long getDurationMillis();
+    method @InaccessibleFromKotlin public java.util.List<java.util.UUID> getEventIds();
+    method @InaccessibleFromKotlin public java.util.Map<java.lang.String,java.lang.String> getHeaders();
+    method @InaccessibleFromKotlin public java.util.UUID getId();
+    method @InaccessibleFromKotlin public com.gu.davy.DavyDebugSnapshot.Request.Outcome getOutcome();
+    method @InaccessibleFromKotlin public long getSentAtMillis();
+    method @InaccessibleFromKotlin public Integer? getStatusCode();
+    property public String body;
+    property public long durationMillis;
+    property public java.util.List<java.util.UUID> eventIds;
+    property public java.util.Map<java.lang.String,java.lang.String> headers;
+    property public java.util.UUID id;
+    property public com.gu.davy.DavyDebugSnapshot.Request.Outcome outcome;
+    property public long sentAtMillis;
+    property public Integer? statusCode;
+  }
+
+  public abstract static sealed exhaustive class DavyDebugSnapshot.Request.Outcome {
+  }
+
+  public static final class DavyDebugSnapshot.Request.Outcome.Delivered extends com.gu.davy.DavyDebugSnapshot.Request.Outcome {
+    field public static final com.gu.davy.DavyDebugSnapshot.Request.Outcome.Delivered INSTANCE;
+  }
+
+  public static final class DavyDebugSnapshot.Request.Outcome.Failed extends com.gu.davy.DavyDebugSnapshot.Request.Outcome {
+    ctor public DavyDebugSnapshot.Request.Outcome.Failed(String reason);
+    method public String component1();
+    method public com.gu.davy.DavyDebugSnapshot.Request.Outcome.Failed copy(optional String reason);
+    method @InaccessibleFromKotlin public String getReason();
+    property public String reason;
+  }
+
+  public static final class DavyDebugSnapshot.Request.Outcome.Rejected extends com.gu.davy.DavyDebugSnapshot.Request.Outcome {
+    field public static final com.gu.davy.DavyDebugSnapshot.Request.Outcome.Rejected INSTANCE;
+  }
+
+  public static final class DavyDebugSnapshot.Request.Outcome.Throttled extends com.gu.davy.DavyDebugSnapshot.Request.Outcome {
+    ctor public DavyDebugSnapshot.Request.Outcome.Throttled(double retryAfterSeconds);
+    method public double component1();
+    method public com.gu.davy.DavyDebugSnapshot.Request.Outcome.Throttled copy(optional double retryAfterSeconds);
+    method @InaccessibleFromKotlin public double getRetryAfterSeconds();
+    property public double retryAfterSeconds;
+  }
+
+  public static final class DavyDebugSnapshot.SentEvent {
+    ctor public DavyDebugSnapshot.SentEvent(com.gu.davy.DavyDebugSnapshot.LoggedEvent event, long sentAtMillis, com.gu.davy.DavyDebugSnapshot.SentEvent.Outcome outcome);
+    method public com.gu.davy.DavyDebugSnapshot.LoggedEvent component1();
+    method public long component2();
+    method public com.gu.davy.DavyDebugSnapshot.SentEvent.Outcome component3();
+    method public com.gu.davy.DavyDebugSnapshot.SentEvent copy(optional com.gu.davy.DavyDebugSnapshot.LoggedEvent event, optional long sentAtMillis, optional com.gu.davy.DavyDebugSnapshot.SentEvent.Outcome outcome);
+    method @InaccessibleFromKotlin public com.gu.davy.DavyDebugSnapshot.LoggedEvent getEvent();
+    method @InaccessibleFromKotlin public com.gu.davy.DavyDebugSnapshot.SentEvent.Outcome getOutcome();
+    method @InaccessibleFromKotlin public long getSentAtMillis();
+    property public com.gu.davy.DavyDebugSnapshot.LoggedEvent event;
+    property public com.gu.davy.DavyDebugSnapshot.SentEvent.Outcome outcome;
+    property public long sentAtMillis;
+  }
+
+  public abstract static sealed exhaustive class DavyDebugSnapshot.SentEvent.Outcome {
+  }
+
+  public static final class DavyDebugSnapshot.SentEvent.Outcome.Delivered extends com.gu.davy.DavyDebugSnapshot.SentEvent.Outcome {
+    field public static final com.gu.davy.DavyDebugSnapshot.SentEvent.Outcome.Delivered INSTANCE;
+  }
+
+  public static final class DavyDebugSnapshot.SentEvent.Outcome.Rejected extends com.gu.davy.DavyDebugSnapshot.SentEvent.Outcome {
+    ctor public DavyDebugSnapshot.SentEvent.Outcome.Rejected(int statusCode);
+    method public int component1();
+    method public com.gu.davy.DavyDebugSnapshot.SentEvent.Outcome.Rejected copy(optional int statusCode);
+    method @InaccessibleFromKotlin public int getStatusCode();
+    property public int statusCode;
+  }
+
+  public static final class DavyDebugSnapshot.SessionStart {
+    ctor public DavyDebugSnapshot.SessionStart(java.util.UUID sessionId, long dateMillis);
+    method public java.util.UUID component1();
+    method public long component2();
+    method public com.gu.davy.DavyDebugSnapshot.SessionStart copy(optional java.util.UUID sessionId, optional long dateMillis);
+    method @InaccessibleFromKotlin public long getDateMillis();
+    method @InaccessibleFromKotlin public java.util.UUID getSessionId();
+    property public long dateMillis;
+    property public java.util.UUID sessionId;
+  }
+
+  public abstract sealed exhaustive class Event {
+    method @InaccessibleFromKotlin public abstract java.util.Map<java.lang.String,java.lang.Object> getInfo();
+    method @InaccessibleFromKotlin public abstract String getName();
+    property public abstract java.util.Map<java.lang.String,java.lang.Object> info;
+    property public abstract String name;
+    field public static final String DURATION_INFO_KEY = "duration_ms";
+    field public static final String ERROR_TYPE_INFO_KEY = "error_type";
+    field public static final String INVALID_NAME_ERROR_NAME = "davy_invalid_event_name";
+    field public static final String REJECTED_NAME_INFO_KEY = "rejected_name";
+    field public static final String SESSION_UPDATED_NAME = "session_updated";
+    field public static final String SIZE_INFO_KEY = "size";
+    field public static final String TOO_LARGE_ERROR_NAME = "davy_event_too_large";
+  }
+
+  public static final class Event.Breadcrumb extends com.gu.davy.Event {
+    ctor public Event.Breadcrumb(String name, optional java.util.Map<java.lang.String,?> info);
+    method public String component1();
+    method public java.util.Map<java.lang.String,java.lang.Object> component2();
+    method public com.gu.davy.Event.Breadcrumb copy(optional String name, optional java.util.Map<java.lang.String,?> info);
+    method @InaccessibleFromKotlin public java.util.Map<java.lang.String,java.lang.Object> getInfo();
+    method @InaccessibleFromKotlin public String getName();
+    property public java.util.Map<java.lang.String,java.lang.Object> info;
+    property public String name;
+  }
+
+  public static final class Event.Error extends com.gu.davy.Event {
+    ctor public Event.Error(String name, optional java.util.Map<java.lang.String,?> info);
+    method public String component1();
+    method public java.util.Map<java.lang.String,java.lang.Object> component2();
+    method public com.gu.davy.Event.Error copy(optional String name, optional java.util.Map<java.lang.String,?> info);
+    method @InaccessibleFromKotlin public java.util.Map<java.lang.String,java.lang.Object> getInfo();
+    method @InaccessibleFromKotlin public String getName();
+    property public java.util.Map<java.lang.String,java.lang.Object> info;
+    property public String name;
+  }
+
+  public enum InvalidEventNameAction {
+    enum_constant public static final com.gu.davy.InvalidEventNameAction CRASH;
+    enum_constant public static final com.gu.davy.InvalidEventNameAction IGNORE;
+    enum_constant public static final com.gu.davy.InvalidEventNameAction LOG_ERROR;
+    enum_constant public static final com.gu.davy.InvalidEventNameAction SEND;
+    enum_constant public static final com.gu.davy.InvalidEventNameAction SEND_ERROR;
+  }
+
+}
+

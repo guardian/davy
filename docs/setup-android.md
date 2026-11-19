@@ -4,21 +4,27 @@ The Kotlin library supports Android 6.0 (API 23) or later. Apps that use it must
 
 ## Installation
 
-Davy isn't published to a Maven repository yet. Until it is, include it in your build from a checkout of this repository, as a [composite build](https://docs.gradle.org/current/userguide/composite_builds.html). In your `settings.gradle.kts`:
+Davy is published to Maven Central as `com.gu:davy`. Make sure your build uses Maven Central, as new Android projects do, then depend on it from your app module's `build.gradle.kts`, replacing `x.y.z` with the [latest version](https://central.sonatype.com/artifact/com.gu/davy):
+
+```kotlin
+dependencies {
+    implementation("com.gu:davy:x.y.z")
+}
+```
+
+The Android library and the Swift package share version numbers, so the same version sends the same requests on both platforms.
+
+Davy's manifest adds the `INTERNET` permission to your app.
+
+### Using an unreleased version
+
+To try changes that aren't released yet, include Davy from a checkout of this repository as a [composite build](https://docs.gradle.org/current/userguide/composite_builds.html). In your `settings.gradle.kts`:
 
 ```kotlin
 includeBuild("path/to/davy/Android")
 ```
 
-Then depend on it from your app module's `build.gradle.kts`:
-
-```kotlin
-dependencies {
-    implementation("com.gu:davy")
-}
-```
-
-Davy's manifest adds the `INTERNET` permission to your app.
+Gradle then builds `com.gu:davy` from the checkout instead of downloading it.
 
 ## Creating the instance
 
