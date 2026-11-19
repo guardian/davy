@@ -9,6 +9,7 @@ json = "20260814"
 snakeyaml = "2.7"
 androidxTestRunner = "1.7.0"
 androidxTestJunit = "1.3.0"
+metalava = "0.5.1"
 
 [libraries]
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
@@ -21,3 +22,4 @@ androidx-test-junit = { group = "androidx.test.ext", name = "junit", version.ref
 [plugins]
 android-library = { id = "com.android.library", version.ref = "agp" }
 android-application = { id = "com.android.application", version.ref = "agp" }
+metalava = { id = "me.tylerbwong.gradle.metalava", version.ref = "metalava" }
