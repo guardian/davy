@@ -105,7 +105,7 @@ function inspectBatch(
   if (!isObject(payload)) return [null, [], null];
   const session = isObject(payload.session) ? payload.session : null;
   const events = Array.isArray(payload.events) ? payload.events.filter(isObject) : [];
-  return [session, events, typeof payload.sentAt === "string" ? payload.sentAt : null];
+  return [session, events, typeof payload.sent_at === "string" ? payload.sent_at : null];
 }
 
 /** What a request contains and every way it breaks the spec, or `null` if it isn't from Davy. */

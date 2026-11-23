@@ -13,8 +13,9 @@ struct Session: Codable, Sendable, Hashable {
     let environment: String?
     /// The main bundle's `CFBundleShortVersionString`, for example `"1.2.0"`.
     let appVersion: String?
-    /// The main bundle's `CFBundleVersion`, for example `"45"`.
-    let build: String?
+    /// The main bundle's `CFBundleVersion` as a number, for example `45`, or `nil` if it isn't a
+    /// whole number, such as `"1.2.3"`.
+    let build: Int?
     /// The operating system, for example `"iOS"` or `"macOS"`.
     let os: String
     /// The operating system version, for example `"26.1.0"`.
@@ -31,7 +32,7 @@ struct Session: Codable, Sendable, Hashable {
         id: UUID,
         environment: String?,
         appVersion: String?,
-        build: String?,
+        build: Int?,
         os: String,
         osVersion: String,
         deviceModel: String?,
@@ -72,7 +73,7 @@ struct Session: Codable, Sendable, Hashable {
             id: UUID(),
             environment: environment,
             appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
-            build: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+            build: (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String).flatMap { Int($0) },
             os: os,
             osVersion: osVersion,
             deviceModel: deviceModel,
@@ -127,5 +128,53 @@ struct Session: Codable, Sendable, Hashable {
         guard sysctlbyname(name, &buffer, &size, nil, 0) == 0 else { return nil }
         let bytes = buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
         return String(decoding: bytes, as: UTF8.self)
+    }
+}
+
+extension Session {
+    /// The JSON keys, in snake case, used both on the wire and on disk.
+    enum CodingKeys: String, CodingKey {
+        case id
+        case environment
+        case appVersion = "app_version"
+        case build
+        case os
+        case osVersion = "os_version"
+        case deviceModel = "device_model"
+        case locale
+        case info
+    }
+
+    /// The camel case keys that events stored by earlier versions use.
+    private enum LegacyCodingKeys: String, CodingKey {
+        case appVersion
+        case osVersion
+        case deviceModel
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
+        let build: Int?
+        // Events stored by earlier versions have `build` as a string.
+        if let legacyBuild = try? container.decodeIfPresent(String.self, forKey: .build) {
+            build = Int(legacyBuild)
+        } else {
+            build = try container.decodeIfPresent(Int.self, forKey: .build)
+        }
+        self.init(
+            id: try container.decode(UUID.self, forKey: .id),
+            environment: try container.decodeIfPresent(String.self, forKey: .environment),
+            appVersion: try container.decodeIfPresent(String.self, forKey: .appVersion)
+                ?? legacy.decodeIfPresent(String.self, forKey: .appVersion),
+            build: build,
+            os: try container.decode(String.self, forKey: .os),
+            osVersion: try container.decodeIfPresent(String.self, forKey: .osVersion)
+                ?? legacy.decode(String.self, forKey: .osVersion),
+            deviceModel: try container.decodeIfPresent(String.self, forKey: .deviceModel)
+                ?? legacy.decodeIfPresent(String.self, forKey: .deviceModel),
+            locale: try container.decodeIfPresent(String.self, forKey: .locale),
+            info: try container.decodeIfPresent([String: Davy.InfoValue].self, forKey: .info)
+        )
     }
 }

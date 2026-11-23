@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Davy events
-  version: 2.0.0
+  version: 3.0.0
   license:
     name: Apache License, Version 2.0
     identifier: Apache-2.0
@@ -22,9 +22,9 @@ info:
       session data, is at most `maxEventSize` bytes (default 4,096). A larger event is replaced
       with the error `davy_event_too_large`.
     - Delivery is at least once, so the same event can arrive more than once with the same ID.
-    - `timestamp` and `sentAt` come from the device's clock, which can be wrong. `sentAt` is set
-      each time a request is sent, so a retry has a later `sentAt` than the attempt before it. If
-      the clock is off, compare `sentAt` with when the server received the request to estimate by
+    - `timestamp` and `sent_at` come from the device's clock, which can be wrong. `sent_at` is set
+      each time a request is sent, so a retry has a later `sent_at` than the attempt before it. If
+      the clock is off, compare `sent_at` with when the server received the request to estimate by
       how much, and shift `timestamp` by the same amount. Events can arrive up to `maxEventAge`
       (default 30 days) after they were logged.
     - A client keeps at most `maxPendingEvents` (default 1,000) events waiting to be sent, and
@@ -76,15 +76,15 @@ paths:
             schema:
               $ref: '#/components/schemas/Batch'
             example:
-              sentAt: '2026-11-09T11:39:00.250Z'
+              sent_at: '2026-11-09T11:39:00.250Z'
               session:
                 id: 6F9619FF-8B86-D011-B42D-00C04FC964FF
                 environment: production
-                appVersion: 1.2.0
-                build: '45'
+                app_version: 1.2.0
+                build: 45
                 os: iOS
-                osVersion: 26.1.0
-                deviceModel: iPhone17,1
+                os_version: 26.1.0
+                device_model: iPhone17,1
                 locale: en_GB
                 info:
                   edition: uk
@@ -130,10 +130,10 @@ components:
     Batch:
       type: object
       description: The body of a request.
-      required: [sentAt, session, events]
+      required: [sent_at, session, events]
       additionalProperties: false
       properties:
-        sentAt:
+        sent_at:
           $ref: '#/components/schemas/SentAt'
         session:
           $ref: '#/components/schemas/Session'
@@ -149,22 +149,22 @@ components:
         Coarse data about the app and device, captured once when a session starts. Nothing here
         identifies a person or a device across sessions. Events left over from a previous launch are
         sent with the session they were logged in.
-      required: [id, os, osVersion]
+      required: [id, os, os_version]
       additionalProperties: false
       properties:
         id:
           $ref: '#/components/schemas/SessionId'
         environment:
           $ref: '#/components/schemas/Environment'
-        appVersion:
+        app_version:
           $ref: '#/components/schemas/AppVersion'
         build:
           $ref: '#/components/schemas/Build'
         os:
           $ref: '#/components/schemas/OS'
-        osVersion:
+        os_version:
           $ref: '#/components/schemas/OSVersion'
-        deviceModel:
+        device_model:
           $ref: '#/components/schemas/DeviceModel'
         locale:
           $ref: '#/components/schemas/Locale'
@@ -289,11 +289,12 @@ components:
         Android. Omitted when missing.
       examples: [1.2.0]
     Build:
-      type: string
+      type: integer
+      format: int64
       description: |
         The app's build number: `CFBundleVersion` on Apple platforms, or `versionCode` on Android.
-        Omitted when missing.
-      examples: ['45']
+        Omitted when missing, or on Apple platforms when `CFBundleVersion` isn't a whole number.
+      examples: [45]
     OS:
       type: string
       description: The operating system.

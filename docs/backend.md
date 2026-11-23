@@ -12,7 +12,7 @@ Your endpoint should:
 4. **Respond with 400, 413, 414, 422, or 431** to requests it will never accept, so their events are discarded instead of retried.
 5. **Respond with 429 or 503 and `Retry-After`** to slow down or pause clients, for example during an incident or a cost spike.
 6. **Expect late events.** Devices send events when they come back online, up to `maxEventAge` (default 30 days) after they were logged, so the most recent minutes of data are always incomplete. Allow for this in dashboards and alerts.
-7. **Record when it received each request**, if you need a trusted time. `timestamp` and `sentAt` come from the device's clock, which can be wrong. Comparing `sentAt` with when you received the request estimates how far off the clock is; see [Fixing clock differences](#fixing-clock-differences).
+7. **Record when it received each request**, if you need a trusted time. `timestamp` and `sent_at` come from the device's clock, which can be wrong. Comparing `sent_at` with when you received the request estimates how far off the clock is; see [Fixing clock differences](#fixing-clock-differences).
 8. **Treat the endpoint as public.** Anything built into an app, including an `Authorization` header, can be extracted from it, so validate what you receive. Ignore fields you don't recognize rather than rejecting them, since rejected events are discarded.
 9. **Not log IP addresses**, if you want to keep reports anonymous.
 
@@ -24,15 +24,15 @@ Each request contains between 1 and `batchSize` events from a single session, al
 
 ```json
 {
-  "sentAt": "2026-11-09T11:39:00.250Z",
+  "sent_at": "2026-11-09T11:39:00.250Z",
   "session": {
     "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
     "environment": "production",
-    "appVersion": "1.2.0",
-    "build": "45",
+    "app_version": "1.2.0",
+    "build": 45,
     "os": "iOS",
-    "osVersion": "26.1.0",
-    "deviceModel": "iPhone17,1",
+    "os_version": "26.1.0",
+    "device_model": "iPhone17,1",
     "locale": "en_GB",
     "info": {
       "edition": "uk"
@@ -66,11 +66,11 @@ Set `batchSize` to `1` to send each event as its own request with a single-eleme
 | --- | --- |
 | `id` | A random UUID generated when the instance is created, typically once per launch |
 | `environment` | The configured `environment`, for example `debug`, `beta`, or `production`; omitted if not set |
-| `appVersion` | The app's version: `CFBundleShortVersionString` on Apple platforms, `versionName` on Android; omitted if missing |
-| `build` | The app's build number: `CFBundleVersion` on Apple platforms, `versionCode` on Android; omitted if missing |
+| `app_version` | The app's version: `CFBundleShortVersionString` on Apple platforms, `versionName` on Android; omitted if missing |
+| `build` | The app's build number, as an integer: `CFBundleVersion` on Apple platforms, `versionCode` on Android; omitted if missing, or if `CFBundleVersion` isn't a whole number |
 | `os` | `iOS`, `macOS`, `macCatalyst`, `visionOS`, `tvOS`, `watchOS`, or `Android` |
-| `osVersion` | `major.minor.patch`, for example `26.1.0`, or `15.0.0` for Android 15 |
-| `deviceModel` | The hardware model identifier on Apple platforms, such as `iPhone17,1`, or `Simulator`; the model name on Android, such as `Pixel 9` |
+| `os_version` | `major.minor.patch`, for example `26.1.0`, or `15.0.0` for Android 15 |
+| `device_model` | The hardware model identifier on Apple platforms, such as `iPhone17,1`, or `Simulator`; the model name on Android, such as `Pixel 9` |
 | `locale` | The device's language and region only, for example `en_GB`, or just the language if there's no region |
 | `info` | The configured `info` and any entries added with `addSessionInfo`, as [info values](#info-values), for additional app and session details; omitted if empty |
 
@@ -88,24 +88,24 @@ The session ID is generated in memory and never reused, so it links events withi
 
 ## Request fields
 
-Wire field names use camelCase, so the send time is `sentAt`, not `sent_at`.
+Wire field names use snake_case, so the send time is `sent_at`, not `sent_at`.
 Like event timestamps, it is ISO 8601 in UTC with exactly three millisecond digits
 (including `.000Z` for whole seconds), but records the send time rather than the event time.
 
 | Field | Description |
 | --- | --- |
-| `sentAt` | When the request was sent, by the device's clock, in the same format as `timestamp`. Set again for every attempt, so a retry has a later `sentAt`; the same for every event in a request |
+| `sent_at` | When the request was sent, by the device's clock, in the same format as `timestamp`. Set again for every attempt, so a retry has a later `sent_at`; the same for every event in a request |
 
 ## Fixing clock differences
 
-A device's clock can be wrong, so `timestamp` can be minutes or even years out. `sentAt` is read from the same clock when the request is sent, so the difference between your server's time when it receives the request and `sentAt` is roughly how far the clock is off, plus the time the request took to arrive:
+A device's clock can be wrong, so `timestamp` can be minutes or even years out. `sent_at` is read from the same clock when the request is sent, so the difference between your server's time when it receives the request and `sent_at` is roughly how far the clock is off, plus the time the request took to arrive:
 
 ```
-clockOffset = receivedAt − sentAt
+clock_offset = received_at − sent_at
 trustedTimestamp = timestamp + clockOffset
 ```
 
-Store `sentAt` and `receivedAt` alongside each event and apply the correction when you query, rather than overwriting `timestamp`, so you can change your approach later. The estimate is rough for a request that took a long time to arrive, and only holds if the clock didn't change between logging the event and sending it.
+Store `sent_at` and `received_at` alongside each event and apply the correction when you query, rather than overwriting `timestamp`, so you can change your approach later. The estimate is rough for a request that took a long time to arrive, and only holds if the clock didn't change between logging the event and sending it.
 
 ## Diagnostics
 
@@ -130,3 +130,5 @@ Each `info` value is a JSON string, number, or Boolean, matching the type the ap
 Read numbers by their value, not their text. The clients can write the same decimal differently: the Swift client sends `2.0` as `2` and `0.0000001` as `1e-07`, while the Kotlin client sends `2.0` and `1.0E-7`. Any JSON parser reads these as the same values. But a whole decimal from an Apple device looks like an integer, so don't decide from the first values you see whether a key holds integers or decimals, as some databases and search indexes do when they infer a schema. Declare decimal keys as decimals instead.
 
 Versions before 2.0.0 of the spec sent every value as a string. Events stored on a device by an earlier version keep their string values when they're sent after the app updates, so for a while you can receive both `"12"` and `12` for the same key, including the diagnostics.
+
+Versions before 3.0.0 of the spec used camelCase field names: `sentAt`, `appVersion`, `osVersion`, and `deviceModel`. Events stored on a device by an earlier version are sent with the snake_case names after the app updates, but an endpoint receiving requests from both old and new app versions must accept both.

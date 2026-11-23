@@ -153,10 +153,10 @@
   function sessionSummary(session) {
     if (!session) return element("span", { class: "muted" }, "—");
     const join = (...parts) => parts.filter((part) => part !== undefined && part !== "").map(text).join(" · ");
-    const app = session.appVersion !== undefined ? `${text(session.appVersion)}${session.build !== undefined ? ` (${text(session.build)})` : ""}` : undefined;
+    const app = session.app_version !== undefined ? `${text(session.app_version)}${session.build !== undefined ? ` (${text(session.build)})` : ""}` : undefined;
     return element("div", { title: `Session ${text(session.id)}` },
-      element("div", {}, join([session.os, session.osVersion].filter((part) => part !== undefined).map(text).join(" "), app, session.environment)),
-      element("div", { class: "muted" }, join(session.deviceModel, session.locale, typeof session.id === "string" ? session.id.slice(0, 8) : session.id)),
+      element("div", {}, join([session.os, session.os_version].filter((part) => part !== undefined).map(text).join(" "), app, session.environment)),
+      element("div", { class: "muted" }, join(session.device_model, session.locale, typeof session.id === "string" ? session.id.slice(0, 8) : session.id)),
       session.info !== undefined ? element("div", { class: "info mono" }, infoList(session.info)) : null,
     );
   }
