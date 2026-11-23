@@ -17,12 +17,19 @@ private struct ReceivedSession: Decodable {
     let id: UUID
     let environment: String?
     let appVersion: String?
-    let build: String?
+    let build: Int?
     let os: String
     let osVersion: String
     let deviceModel: String?
     let locale: String?
     let info: [String: Davy.InfoValue]?
+
+    enum CodingKeys: String, CodingKey {
+        case id, environment, build, os, locale, info
+        case appVersion = "app_version"
+        case osVersion = "os_version"
+        case deviceModel = "device_model"
+    }
 }
 
 private struct ReceivedEvent: Decodable {

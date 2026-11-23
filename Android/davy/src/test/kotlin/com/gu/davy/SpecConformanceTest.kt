@@ -38,7 +38,7 @@ class SpecConformanceTest {
                 id = UUID.randomUUID(),
                 environment = "beta",
                 appVersion = "1.2.0",
-                build = "45",
+                build = 45,
                 os = Session.OS,
                 osVersion = Session.osVersion("15"),
                 deviceModel = "Pixel 9",
@@ -105,7 +105,7 @@ class SpecConformanceTest {
                     headers = fixture.getJSONObject("headers").strings(),
                 ),
             )
-            val request = builder.request(session, events, DavyJson.parseTimestamp(fixture.getString("sentAt")))
+            val request = builder.request(session, events, DavyJson.parseTimestamp(fixture.getString("sent_at")))
             val expected = fixture.getJSONObject("expected")
 
             assertEquals(name, "POST", expected.getString("method"))
@@ -132,8 +132,8 @@ class SpecConformanceTest {
         for (sentAt in listOf("2023-11-14T22:13:25.000Z", "2023-11-14T22:13:25.007Z")) {
             val request = builder.request(session, listOf(event), DavyJson.parseTimestamp(sentAt))
             val payload = JSONObject(request.body.decodeToString())
-            assertEquals(sentAt, payload.getString("sentAt"))
-            assertTrue(!payload.has("sent_at"))
+            assertEquals(sentAt, payload.getString("sent_at"))
+            assertTrue(!payload.has("sentAt"))
             assertEquals(timestamp, payload.getJSONArray("events").getJSONObject(0).getString("timestamp"))
             assertConforms(listOf(request))
         }
@@ -165,7 +165,7 @@ class SpecConformanceTest {
 
     @Test
     fun requestsThatBreakTheSpecAreCaught() {
-        val session = Session(UUID.randomUUID(), "beta", "1.2.0", "45", Session.OS, "15.0.0", "Pixel 9", "en_GB")
+        val session = Session(UUID.randomUUID(), "beta", "1.2.0", 45, Session.OS, "15.0.0", "Pixel 9", "en_GB")
         val event = EventRecord.from(Event.Error("payment_declined", mapOf("reason" to "card_expired")), System.currentTimeMillis())
         val batch = requests(session, listOf(event)).single()
         assertConforms(listOf(batch))
@@ -187,8 +187,8 @@ class SpecConformanceTest {
                 it.getJSONArray("events").getJSONObject(0).getJSONObject("info").put("payment", JSONObject(mapOf("method" to "google_pay")))
             },
             "no events" to changingBody(batch) { it.put("events", org.json.JSONArray()) },
-            "missing sentAt in body" to changingBody(batch) { it.remove("sentAt") },
-            "sentAt without milliseconds" to changingBody(batch) { it.put("sentAt", "2026-11-09T11:39:00Z") },
+            "missing sent_at in body" to changingBody(batch) { it.remove("sent_at") },
+            "sent_at without milliseconds" to changingBody(batch) { it.put("sent_at", "2026-11-09T11:39:00Z") },
             "query string on batch endpoint" to HttpRequest("${batch.url}?key=123", batch.headers, batch.body),
             "wrong User-Agent" to HttpRequest(batch.url, batch.headers + ("User-Agent" to "Dalvik/2.1.0"), batch.body),
             "wrong Accept-Language" to HttpRequest(batch.url, batch.headers + ("Accept-Language" to "en-GB"), batch.body),
@@ -198,6 +198,25 @@ class SpecConformanceTest {
     }
 
     /** [request] with its JSON body changed by [change]. */
+    @Test
+    fun sessionsStoredWithAStringBuildStillDecode() {
+        fun decode(build: String) = DavyJson.parseSession(
+            JSONObject("""{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","build":$build,"os":"Android","osVersion":"15.0.0"}"""),
+        )
+        assertEquals(45L, decode("45").build)
+        assertEquals(45L, decode("\"45\"").build)
+    }
+
+    @Test
+    fun sessionsStoredWithCamelCaseKeysStillDecode() {
+        val session = DavyJson.parseSession(
+            JSONObject("""{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","appVersion":"1.2.0","os":"Android","osVersion":"15.0.0","deviceModel":"Pixel 9"}"""),
+        )
+        assertEquals("1.2.0", session.appVersion)
+        assertEquals("15.0.0", session.osVersion)
+        assertEquals("Pixel 9", session.deviceModel)
+    }
+
     private fun changingBody(request: HttpRequest, change: (JSONObject) -> Unit): HttpRequest {
         val payload = JSONObject(request.body.decodeToString()).also(change)
         return HttpRequest(request.url, request.headers, payload.toString().toByteArray())

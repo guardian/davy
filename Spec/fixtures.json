@@ -1,5 +1,5 @@
 {
-  "description": "Requests every Davy client must build exactly. For each case, build a request for the session and events with the endpoint and headers, sent at sentAt, then compare it with expected: the method and URL must match exactly, header names ignoring case, and the body as parsed JSON.",
+  "description": "Requests every Davy client must build exactly. For each case, build a request for the session and events with the endpoint and headers, sent at sent_at, then compare it with expected: the method and URL must match exactly, header names ignoring case, and the body as parsed JSON.",
   "cases": [
     {
       "name": "Batch with every session field and two events",
@@ -7,15 +7,15 @@
       "headers": {
         "Authorization": "Bearer secret-token"
       },
-      "sentAt": "2026-11-09T11:39:00.250Z",
+      "sent_at": "2026-11-09T11:39:00.250Z",
       "session": {
         "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
         "environment": "production",
-        "appVersion": "1.2.0",
-        "build": "45",
+        "app_version": "1.2.0",
+        "build": 45,
         "os": "iOS",
-        "osVersion": "26.1.0",
-        "deviceModel": "iPhone17,1",
+        "os_version": "26.1.0",
+        "device_model": "iPhone17,1",
         "locale": "en_GB",
         "info": {
           "edition": "uk",
@@ -68,11 +68,11 @@
               "type": "error"
             }
           ],
-          "sentAt": "2026-11-09T11:39:00.250Z",
+          "sent_at": "2026-11-09T11:39:00.250Z",
           "session": {
-            "appVersion": "1.2.0",
-            "build": "45",
-            "deviceModel": "iPhone17,1",
+            "app_version": "1.2.0",
+            "build": 45,
+            "device_model": "iPhone17,1",
             "environment": "production",
             "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
             "info": {
@@ -81,7 +81,7 @@
             },
             "locale": "en_GB",
             "os": "iOS",
-            "osVersion": "26.1.0"
+            "os_version": "26.1.0"
           }
         }
       }
@@ -90,11 +90,11 @@
       "name": "Single event with only required session fields, an endpoint with a query, info with special characters, and a whole second",
       "endpoint": "https://api.example.com/v1/events?key=abc",
       "headers": {},
-      "sentAt": "2023-11-14T22:13:25.007Z",
+      "sent_at": "2023-11-14T22:13:25.007Z",
       "session": {
         "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
         "os": "Android",
-        "osVersion": "15.0.0"
+        "os_version": "15.0.0"
       },
       "events": [
         {
@@ -135,11 +135,11 @@
               "type": "error"
             }
           ],
-          "sentAt": "2023-11-14T22:13:25.007Z",
+          "sent_at": "2023-11-14T22:13:25.007Z",
           "session": {
             "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
             "os": "Android",
-            "osVersion": "15.0.0"
+            "os_version": "15.0.0"
           }
         }
       }
@@ -148,11 +148,11 @@
       "name": "Info with strings, integers, decimals, and Booleans, including a number as a string",
       "endpoint": "https://api.example.com/events",
       "headers": {},
-      "sentAt": "2026-11-09T11:39:00.250Z",
+      "sent_at": "2026-11-09T11:39:00.250Z",
       "session": {
         "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
         "os": "iOS",
-        "osVersion": "26.1.0",
+        "os_version": "26.1.0",
         "info": {
           "tier": "supporter",
           "beta": true,
@@ -204,7 +204,7 @@
               "type": "error"
             }
           ],
-          "sentAt": "2026-11-09T11:39:00.250Z",
+          "sent_at": "2026-11-09T11:39:00.250Z",
           "session": {
             "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
             "info": {
@@ -213,7 +213,7 @@
               "tier": "supporter"
             },
             "os": "iOS",
-            "osVersion": "26.1.0"
+            "os_version": "26.1.0"
           }
         }
       }
