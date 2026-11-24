@@ -19,7 +19,7 @@ import os
 /// ```json
 /// {
 ///   "sent_at": "…",
-///   "session": { "id": "…", "environment": "production", "app_version": "1.2.0", "build": 45, "os": "iOS", "os_version": "26.1.0", "device_model": "iPhone17,1", "locale": "en_GB" },
+///   "session": { "id": "…", "environment": "production", "app_version": "1.2.0", "build": 45, "os": "ios", "os_version": "26.1.0", "device_model": "iPhone17,1", "locale": "en_GB" },
 ///   "events": [ { "id": "…", "type": "breadcrumb", "name": "checkout_started", "timestamp": "…" } ]
 /// }
 /// ```

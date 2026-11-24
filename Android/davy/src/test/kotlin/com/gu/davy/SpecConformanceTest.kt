@@ -201,7 +201,7 @@ class SpecConformanceTest {
     @Test
     fun sessionsStoredWithAStringBuildStillDecode() {
         fun decode(build: String) = DavyJson.parseSession(
-            JSONObject("""{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","build":$build,"os":"Android","osVersion":"15.0.0"}"""),
+            JSONObject("""{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","build":$build,"os":"android","osVersion":"15.0.0"}"""),
         )
         assertEquals(45L, decode("45").build)
         assertEquals(45L, decode("\"45\"").build)
@@ -210,7 +210,7 @@ class SpecConformanceTest {
     @Test
     fun sessionsStoredWithCamelCaseKeysStillDecode() {
         val session = DavyJson.parseSession(
-            JSONObject("""{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","appVersion":"1.2.0","os":"Android","osVersion":"15.0.0","deviceModel":"Pixel 9"}"""),
+            JSONObject("""{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","appVersion":"1.2.0","os":"android","osVersion":"15.0.0","deviceModel":"Pixel 9"}"""),
         )
         assertEquals("1.2.0", session.appVersion)
         assertEquals("15.0.0", session.osVersion)

@@ -132,12 +132,12 @@ struct SpecConformanceTests {
         let sessions = [
             Session(
                 id: UUID(), environment: "production", appVersion: "1.2.0", build: 45,
-                os: "iOS", osVersion: "26.1.0", deviceModel: "iPhone17,1", locale: "es_419",
+                os: "ios", osVersion: "26.1.0", deviceModel: "iPhone17,1", locale: "es_419",
                 info: ["edition": "uk", "tier": "supporter"]
             ),
             Session(
                 id: UUID(), environment: nil, appVersion: nil, build: nil,
-                os: "watchOS", osVersion: "12.0.0", deviceModel: nil, locale: nil
+                os: "watchos", osVersion: "12.0.0", deviceModel: nil, locale: nil
             ),
         ]
         // A whole second, which is still sent with milliseconds.
@@ -222,7 +222,7 @@ struct SpecConformanceTests {
         let spec = try OpenAPISpec.load()
         let session = Session(
             id: UUID(), environment: "beta", appVersion: "1.2.0", build: 45,
-            os: "iOS", osVersion: "26.1.0", deviceModel: "iPhone17,1", locale: "en_GB"
+            os: "ios", osVersion: "26.1.0", deviceModel: "iPhone17,1", locale: "en_GB"
         )
         let events = [EventRecord(.error("payment_declined", info: ["reason": "card_expired"]), timestamp: .now)]
         let batch = try RequestBuilder(configuration: DavyConfiguration(endpoint: endpoint))
@@ -302,7 +302,7 @@ struct SpecConformanceTests {
 
     @Test func sessionsStoredWithAStringBuildStillDecode() throws {
         func decode(build: String) throws -> Session {
-            let json = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","build":\#(build),"os":"iOS","osVersion":"26.1.0"}"#
+            let json = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","build":\#(build),"os":"ios","osVersion":"26.1.0"}"#
             return try DavyJSON.decoder.decode(Session.self, from: Data(json.utf8))
         }
         #expect(try decode(build: "45").build == 45)
@@ -311,7 +311,7 @@ struct SpecConformanceTests {
     }
 
     @Test func sessionsStoredWithCamelCaseKeysStillDecode() throws {
-        let json = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","appVersion":"1.2.0","os":"iOS","osVersion":"26.1.0","deviceModel":"iPhone17,1"}"#
+        let json = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","appVersion":"1.2.0","os":"ios","osVersion":"26.1.0","deviceModel":"iPhone17,1"}"#
         let session = try DavyJSON.decoder.decode(Session.self, from: Data(json.utf8))
         #expect(session.appVersion == "1.2.0")
         #expect(session.osVersion == "26.1.0")
