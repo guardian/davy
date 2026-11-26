@@ -137,7 +137,7 @@ Both platforms share one version, so a release of the Android library is also a 
 
 To make a full release, run the workflow from `main`: in **Actions**, select **Release**, then **Run workflow**, or run `gh workflow run release.yml`. To publish a preview version from a pull request, such as `1.1.0-PREVIEW.my-branch.2026-11-19T1200.1a2b3c4d`, run it on the pull request's branch.
 
-Only the Kotlin API decides the version, so if a change breaks compatibility only for Swift, make sure the matching change to the Kotlin API is part of the same release. To see how your changes affect the Kotlin API, run `./gradlew :davy:metalavaCheckCompatibilityRelease` in the `Android` folder, which fails for incompatible changes, and `./gradlew :davy:metalavaGenerateSignatureRelease`, which updates `api.txt`. The workflow updates `api.txt` itself, so you don't need to commit it.
+Only the Kotlin API decides the version, so if a change breaks compatibility only for Swift, make sure the matching change to the Kotlin API is part of the same release. To see how your changes affect the Kotlin API, run `./gradlew :davy:metalavaCheckCompatibilityRelease` in the `Android` folder, which fails for incompatible changes, and `./gradlew :davy:metalavaGenerateSignatureRelease`, which updates `api.txt`. The version updates in the workflow depend on it updating `api.txt` itself, so you **must** not manually update and commit it.
 
 The workflow builds the library with the Java version in `Android/.tool-versions`. It needs these, set up once:
 
