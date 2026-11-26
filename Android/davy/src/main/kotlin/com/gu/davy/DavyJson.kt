@@ -35,9 +35,9 @@ internal object DavyJson {
     /** UUIDs in uppercase, as Apple platforms write them. */
     fun uuid(id: UUID): String = id.toString().uppercase(Locale.ROOT)
 
-    /** The JSON batch request body: `{ "sentAt": "…", "session": { … }, "events": [ … ] }`. */
+    /** The JSON batch request body: `{ "sent_at": "…", "session": { … }, "events": [ … ] }`. */
     fun payload(session: Session, events: List<EventRecord>, sentAtMillis: Long): String = buildString {
-        append("{\"sentAt\":")
+        append("{\"sent_at\":")
         appendString(timestamp(sentAtMillis))
         append(",\"session\":")
         appendSession(session)
@@ -75,15 +75,16 @@ internal object DavyJson {
         null
     }
 
-    /** Reads a session in the form [payload] writes it. */
+    /** Reads a session in the form [payload] writes it, or with the camel case keys of earlier versions. */
     fun parseSession(json: JSONObject): Session = Session(
         id = UUID.fromString(json.getString("id")),
         environment = json.stringOrNull("environment"),
-        appVersion = json.stringOrNull("appVersion"),
-        build = json.stringOrNull("build"),
+        appVersion = json.stringOrNull("app_version") ?: json.stringOrNull("appVersion"),
+        // Events stored by earlier versions have `build` as a string, which `getLong` also reads.
+        build = if (json.isNull("build")) null else json.getLong("build"),
         os = json.getString("os"),
-        osVersion = json.getString("osVersion"),
-        deviceModel = json.stringOrNull("deviceModel"),
+        osVersion = json.stringOrNull("os_version") ?: json.getString("osVersion"),
+        deviceModel = json.stringOrNull("device_model") ?: json.stringOrNull("deviceModel"),
         locale = json.stringOrNull("locale"),
         info = json.optJSONObject("info")?.let(::parseInfo)?.takeIf { it.isNotEmpty() },
     )
@@ -113,11 +114,11 @@ internal object DavyJson {
             linkedMapOf(
                 "id" to uuid(session.id),
                 "environment" to session.environment,
-                "appVersion" to session.appVersion,
+                "app_version" to session.appVersion,
                 "build" to session.build,
                 "os" to session.os,
-                "osVersion" to session.osVersion,
-                "deviceModel" to session.deviceModel,
+                "os_version" to session.osVersion,
+                "device_model" to session.deviceModel,
                 "locale" to session.locale,
                 "info" to session.info?.takeIf { it.isNotEmpty() }?.toSortedMap(),
             ),

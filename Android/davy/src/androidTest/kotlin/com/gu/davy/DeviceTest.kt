@@ -33,7 +33,7 @@ class DeviceTest {
     fun sessionsDescribeTheDeviceInTheSpecsFormat() {
         val session = Session.start(context, "test")
 
-        assertEquals("Android", session.os)
+        assertEquals("android", session.os)
         assertEquals("test", session.environment)
         assertTrue(session.osVersion, osVersionPattern.matches(session.osVersion))
         assertEquals(Session.osVersion(Build.VERSION.RELEASE), session.osVersion)
@@ -99,7 +99,7 @@ class DeviceTest {
             assertEquals("POST /events HTTP/1.1", requestLine)
             val payload = JSONObject(body.decodeToString())
             assertEquals(DavyJson.uuid(telemetry.sessionId), payload.getJSONObject("session").getString("id"))
-            assertEquals("Android", payload.getJSONObject("session").getString("os"))
+            assertEquals("android", payload.getJSONObject("session").getString("os"))
             val events = payload.getJSONArray("events")
             assertEquals(listOf("checkout_started", "payment_declined"), (0 until events.length()).map { events.getJSONObject(it).getString("name") })
             val errorInfo = events.getJSONObject(1).getJSONObject("info")

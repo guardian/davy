@@ -72,7 +72,7 @@ private let DavyConfig = DavyConfiguration(
     // Send as soon as 20 events are pending (default 100).
     batchSize: 20,
     // Or after 5 seconds without a new event (default 10 seconds).
-    debounceInterval: .seconds(5),
+    debounceInterval: .seconds(1),
     // Discard events that still haven't been delivered after 7 days (default 30 days).
     maxEventAge: .seconds(7 * 24 * 60 * 60),
     // Keep at most 500 events waiting to be sent, discarding the oldest beyond that (default 1,000).

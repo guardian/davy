@@ -53,6 +53,11 @@ struct SpecConformanceTests {
         let session: Session
         let events: [EventRecord]
         let expected: Expected
+
+        enum CodingKeys: String, CodingKey {
+            case name, endpoint, headers, session, events, expected
+            case sentAt = "sent_at"
+        }
     }
 
     private struct Fixtures: Decodable {
@@ -126,13 +131,13 @@ struct SpecConformanceTests {
         let builder = RequestBuilder(configuration: DavyConfiguration(endpoint: endpoint))
         let sessions = [
             Session(
-                id: UUID(), environment: "production", appVersion: "1.2.0", build: "45",
-                os: "iOS", osVersion: "26.1.0", deviceModel: "iPhone17,1", locale: "es_419",
+                id: UUID(), environment: "production", appVersion: "1.2.0", build: 45,
+                os: "ios", osVersion: "26.1.0", deviceModel: "iPhone17,1", locale: "es_419",
                 info: ["edition": "uk", "tier": "supporter"]
             ),
             Session(
                 id: UUID(), environment: nil, appVersion: nil, build: nil,
-                os: "watchOS", osVersion: "12.0.0", deviceModel: nil, locale: nil
+                os: "watchos", osVersion: "12.0.0", deviceModel: nil, locale: nil
             ),
         ]
         // A whole second, which is still sent with milliseconds.
@@ -160,8 +165,8 @@ struct SpecConformanceTests {
 
         let body = try #require(request.httpBody)
         let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
-        #expect(payload["sentAt"] as? String == sentAt)
-        #expect(payload["sent_at"] == nil)
+        #expect(payload["sent_at"] as? String == sentAt)
+        #expect(payload["sentAt"] == nil)
         let events = try #require(payload["events"] as? [[String: Any]])
         #expect(events.first?["timestamp"] as? String == timestamp)
         expectConforms(request, to: try OpenAPISpec.load())
@@ -216,8 +221,8 @@ struct SpecConformanceTests {
     func requestsThatBreakTheSpecAreCaught(_ breakage: Breakage) throws {
         let spec = try OpenAPISpec.load()
         let session = Session(
-            id: UUID(), environment: "beta", appVersion: "1.2.0", build: "45",
-            os: "iOS", osVersion: "26.1.0", deviceModel: "iPhone17,1", locale: "en_GB"
+            id: UUID(), environment: "beta", appVersion: "1.2.0", build: 45,
+            os: "ios", osVersion: "26.1.0", deviceModel: "iPhone17,1", locale: "en_GB"
         )
         let events = [EventRecord(.error("payment_declined", info: ["reason": "card_expired"]), timestamp: .now)]
         let batch = try RequestBuilder(configuration: DavyConfiguration(endpoint: endpoint))
@@ -276,9 +281,9 @@ struct SpecConformanceTests {
         case .noEvents:
             try changingBody(of: batch) { $0["events"] = [] }
         case .missingSentAt:
-            try changingBody(of: batch) { $0["sentAt"] = nil }
+            try changingBody(of: batch) { $0["sent_at"] = nil }
         case .sentAtWithoutMilliseconds:
-            try changingBody(of: batch) { $0["sentAt"] = "2026-11-09T11:39:00Z" }
+            try changingBody(of: batch) { $0["sent_at"] = "2026-11-09T11:39:00Z" }
         case .wrongUserAgent:
             {
                 var request = batch
@@ -293,5 +298,26 @@ struct SpecConformanceTests {
             }()
         }
         #expect(!spec.violations(of: broken).isEmpty)
+    }
+
+    @Test func sessionsStoredWithAStringBuildStillDecode() throws {
+        func decode(build: String) throws -> Session {
+            let json = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","build":\#(build),"os":"ios","osVersion":"26.1.0"}"#
+            return try DavyJSON.decoder.decode(Session.self, from: Data(json.utf8))
+        }
+        #expect(try decode(build: "45").build == 45)
+        #expect(try decode(build: #""45""#).build == 45)
+        #expect(try decode(build: #""1.2.3""#).build == nil)
+    }
+
+    @Test func sessionsStoredWithCamelCaseKeysStillDecode() throws {
+        let json = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","appVersion":"1.2.0","os":"ios","osVersion":"26.1.0","deviceModel":"iPhone17,1"}"#
+        let session = try DavyJSON.decoder.decode(Session.self, from: Data(json.utf8))
+        #expect(session.appVersion == "1.2.0")
+        #expect(session.osVersion == "26.1.0")
+        #expect(session.deviceModel == "iPhone17,1")
+
+        let encoded = try #require(JSONSerialization.jsonObject(with: DavyJSON.encoder.encode(session)) as? [String: Any])
+        #expect(Set(encoded.keys) == ["id", "app_version", "os", "os_version", "device_model"])
     }
 }

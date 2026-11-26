@@ -1,6 +1,6 @@
 # Development
 
-Davy has a client for each platform, built to send exactly the same requests. This page covers how the repository is laid out and how to test changes.
+Davy has a client for each platform, built to send exactly the same requests. This page covers how the repository is laid out, how to test changes, and how to release them.
 
 ## Repository layout
 
@@ -8,7 +8,7 @@ Davy has a client for each platform, built to send exactly the same requests. Th
 | --- | --- |
 | `Package.swift`, `Sources/`, `Tests/` | The Swift package for iOS and macOS. Swift Package Manager needs `Package.swift` at the root of the repository |
 | `Example/` | The iOS example app |
-| `Android/` | A Gradle project with the Kotlin library, `davy`, and the Android example app, `example` |
+| `Android/` | A Gradle project with the Kotlin library, `davy`, and the Android example app, `example`. `version.txt` is the latest release, and `davy/api/api.txt` the library's public API; see [Releasing](#releasing) |
 | `Spec/` | What both clients are tested against: the OpenAPI spec, `openapi.yaml`, and the shared request fixtures, `fixtures.json` |
 | `TestServer/` | A local server to send events to while developing; see [Trying the clients against a server](#trying-the-clients-against-a-server) |
 | `docs/` | This documentation |
@@ -126,3 +126,23 @@ The page shows each event as it arrives, newest first, with:
 - **The response.** Use **Respond with** to change how the server responds to every request, to see how the clients handle rejection (400), throttling and pausing (429 and 503 with `Retry-After`), and failures (500).
 
 To read what the server received from a script, use `GET /_/requests`, or **Download JSON** on the page.
+
+## Releasing
+
+Both platforms share one version, so a release of the Android library is also a release of the Swift package. Releases are made by the [Release workflow](../.github/workflows/release.yml), which uses the Guardian's [`gha-gradle-library-release-workflow`](https://github.com/guardian/gha-gradle-library-release-workflow). It:
+
+1. Works out the next version from the latest release in `Android/version.txt`, and from how the Kotlin library's public API, in `Android/davy/api/api.txt`, has changed since: a major version if it's incompatible, a minor version if it has additions, and a patch version otherwise.
+2. Publishes `com.gu:davy` to Maven Central, signed with the Guardian's release key.
+3. Tags the release as `vX.Y.Z`, which Swift Package Manager also reads as a version, adds a commit to `main` updating `version.txt` and `api.txt`, and creates a GitHub release.
+
+To make a full release, run the workflow from `main`: in **Actions**, select **Release**, then **Run workflow**, or run `gh workflow run release.yml`. To publish a preview version from a pull request, such as `1.1.0-PREVIEW.my-branch.2026-11-19T1200.1a2b3c4d`, run it on the pull request's branch.
+
+Only the Kotlin API decides the version, so if a change breaks compatibility only for Swift, make sure the matching change to the Kotlin API is part of the same release. To see how your changes affect the Kotlin API, run `./gradlew :davy:metalavaCheckCompatibilityRelease` in the `Android` folder, which fails for incompatible changes, and `./gradlew :davy:metalavaGenerateSignatureRelease`, which updates `api.txt`. The version updates in the workflow depend on it updating `api.txt` itself, so you **must** not manually update and commit it.
+
+The workflow builds the library with the Java version in `Android/.tool-versions`. It needs these, set up once:
+
+- Access to the Guardian's Maven release secrets, granted in [`guardian/github-secret-access`](https://github.com/guardian/github-secret-access). The repository must have the `production` topic.
+- Access to this repository for the [GU Gradle library release](https://github.com/apps/gu-gradle-library-release) GitHub App, granted by a GitHub organisation owner.
+- That app on the bypass list of the rulesets protecting `main`, so it can add the release commit.
+
+Version `1.0.0` was released for Swift only, and tagged `1.0.0`, before the workflow was set up, so the first version on Maven Central is `1.0.1`.

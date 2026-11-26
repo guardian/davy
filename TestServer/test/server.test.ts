@@ -10,7 +10,7 @@ interface Fixture {
   name: string;
   session: object;
   events: object[];
-  sentAt: string;
+  sent_at: string;
   expected: { method: string; url: string; headers: Record<string, string>; body?: unknown };
 }
 
@@ -34,13 +34,13 @@ describe("inspectRequest", () => {
       assert.deepEqual(request.problems, []);
       assert.deepEqual(request.session, fixture.session);
       assert.deepEqual(request.events, fixture.events);
-      assert.equal(request.sentAt, fixture.sentAt);
+      assert.equal(request.sentAt, fixture.sent_at);
     });
   }
 
   test("reports JSON batches that break the spec", () => {
     const body = Buffer.from(JSON.stringify({
-      session: { id: "not-a-uuid", os: "iOS", osVersion: "26.1.0" },
+      session: { id: "not-a-uuid", os: "iOS", os_version: "26.1.0" },
       events: [{ id: "1B4E28BA-2FA1-11D2-883F-0016D3CCA427", type: "warning", name: "a", timestamp: "2026-11-09T11:38:55.780Z", extra: "1" }],
     }));
     const { problems } = inspectRequest(spec, "POST", "/events", [], body)!;
@@ -90,7 +90,7 @@ describe("server", () => {
     assert.equal(throttled.headers.get("Retry-After"), "30");
 
     const recorded = await requests();
-    assert.deepEqual(recorded.map((r) => r.sentAt), [...fixtures.map((f) => f.sentAt), fixtures[0].sentAt]);
+    assert.deepEqual(recorded.map((r) => r.sentAt), [...fixtures.map((f) => f.sent_at), fixtures[0].sent_at]);
     assert.ok(recorded.every((r) => r.problems.length === 0));
     // The first fixture was stored, so its events arriving again are duplicates.
     assert.deepEqual(recorded.at(-1)!.events.map((e) => e.duplicate), [true, true]);

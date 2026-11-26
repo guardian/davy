@@ -378,7 +378,7 @@ public class DavyDebugActivity : Activity() {
         content.addView(field("ID", monospace(DavyJson.uuid(session.id))))
         content.addView(field("Environment", text(session.environment ?: "—")))
         content.addView(field("App Version", text(session.appVersion ?: "—")))
-        content.addView(field("Build", text(session.build ?: "—")))
+        content.addView(field("Build", text(session.build?.toString() ?: "—")))
         content.addView(field("OS", text("${session.os} ${session.osVersion}")))
         content.addView(field("Device Model", text(session.deviceModel ?: "—")))
         content.addView(field("Locale", text(session.locale ?: "—")))
@@ -388,7 +388,7 @@ public class DavyDebugActivity : Activity() {
         content.addView(sectionHeader("Example Request JSON"))
         content.addView(text(json, size = 12f, monospace = true, selectable = true))
         content.addView(shareButton("Share Example JSON", json))
-        content.addView(caption("This example contains one event and uses its timestamp as sentAt. Open a request to see the actual batch."))
+        content.addView(caption("This example contains one event and uses its timestamp as sent_at. Open a request to see the actual batch."))
     }
 
     private fun showFailure(reason: String, dateMillis: Long) {

@@ -5,8 +5,8 @@ import Testing
 /// The same cases as the Android client's `DebugEventQueryTest`.
 struct DebugEventFilterTests {
     private let session = Session(
-        id: UUID(), environment: nil, appVersion: "1.2.0", build: "45",
-        os: "iOS", osVersion: "26.1.0", deviceModel: "iPhone17,1", locale: "en_GB",
+        id: UUID(), environment: nil, appVersion: "1.2.0", build: 45,
+        os: "ios", osVersion: "26.1.0", deviceModel: "iPhone17,1", locale: "en_GB",
         info: ["edition": "uk"]
     )
     private let snapshot: DavyDebugSnapshot

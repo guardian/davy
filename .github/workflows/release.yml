@@ -1,0 +1,25 @@
+name: Release
+
+# Publishes the Android library to Maven Central as com.gu:davy, tags the release as vX.Y.Z, and
+# creates a GitHub release, which Swift Package Manager also uses. Run it from main for a full
+# release, or from a pull request's branch for a preview release. See docs/development.md.
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    name: Release
+    if: github.repository == 'guardian/davy'
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: guardian/gha-gradle-library-release-workflow/.github/workflows/reusable-release.yml@3c1a340be3f52bd8dd70628b0067a016164ae29f
+    with:
+      SOURCE_DIR: 'Android'
+      MODULES: 'davy'
+      API_FILE: 'api/api.txt'
+      VERSION_FILE: 'version.txt'
+    secrets:
+      SONATYPE_TOKEN: ${{ secrets.AUTOMATED_MAVEN_RELEASE_SONATYPE_TOKEN }}
+      PGP_PRIVATE_KEY: ${{ secrets.AUTOMATED_MAVEN_RELEASE_PGP_SECRET }}
+      GITHUB_APP_PRIVATE_KEY: ${{ secrets.AUTOMATED_MAVEN_GRADLE_RELEASE_GITHUB_APP_PRIVATE_KEY }}

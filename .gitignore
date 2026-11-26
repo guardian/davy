@@ -8,3 +8,101 @@ DerivedData/
 .netrc
 node_modules/
 TestServer/node_modules/
+
+
+### Android gitignore
+
+#Amazon S3 credentials
+_keys.sh
+
+# IDEA Ignores
+*.iml
+*.ipr
+*.iws
+.idea
+local.properties
+captures
+
+#Gradle build folders
+build/
+buildSrc/build
+.gradle/*
+buildSrc/.gradle/*
+java-tests/.gradle/*
+java-tests/java-tests/
+.gradletasknamecache
+android-news-app/hs_err_*.log
+app/hs_err_*.log
+
+# Generic Android Ignores
+/*/bin
+*/gen
+bin
+gen/
+target
+*.apk
+android-common.jar
+/.kotlin/**
+/build-logic/.kotlin/**
+
+# MAC Ignores
+.DS_Store
+
+# Templates
+android-news-app/node_modules
+android-news-app/.gradle
+android-news-app/package-lock.json
+app/node_modules
+app/.gradle
+app/package-lock.json
+
+# Project Ignores
+.classpath
+.project
+.settings/
+build.properties
+out/production/
+out/
+
+# Custom Ignores
+*.swp
+*/out
+*.db4o
+*.db40
+*.db4O
+*.trace
+perf/
+.envrc
+
+# Test Ignores
+file-write-test.txt
+java-tests/file-write-test.txt
+test-output/
+httpCache/
+
+#python compiled files
+*.pyc
+
+/RUNNING_PID
+/logs/
+/project/*-shim.sbt
+/project/project/
+/project/target/
+/target/
+*.class
+
+# fastlane specific
+**/fastlane/report.xml
+vendor/bundle/*
+.bundle
+
+# ProGuard/R8
+proguard-rules.txt
+proguard-seeds.txt
+
+#jenv
+**/.java-version
+/build-logic/.gradle/
+
+# Folder for downloading Github APKs for local testing
+github_apks/

@@ -22,7 +22,7 @@ internal data class Session(
     /** The app's `versionName`, for example `1.2.0`. */
     val appVersion: String?,
     /** The app's `versionCode`, for example `45`. */
-    val build: String?,
+    val build: Long?,
     val os: String,
     /** The Android version as `major.minor.patch`, for example `15.0.0`. */
     val osVersion: String,
@@ -41,7 +41,7 @@ internal data class Session(
         copy(info = (info.orEmpty() + additionalInfo).takeIf { it.isNotEmpty() })
 
     companion object {
-        const val OS = "Android"
+        const val OS = "android"
 
         /** Captures the current app and device data for a new session. */
         fun start(context: Context, environment: String?, info: Map<String, Any> = emptyMap()): Session {
@@ -91,12 +91,12 @@ internal data class Session(
             null
         }
 
-        private fun versionCode(packageInfo: PackageInfo): String =
+        private fun versionCode(packageInfo: PackageInfo): Long =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                packageInfo.longVersionCode.toString()
+                packageInfo.longVersionCode
             } else {
                 @Suppress("DEPRECATION")
-                packageInfo.versionCode.toString()
+                packageInfo.versionCode.toLong()
             }
     }
 }

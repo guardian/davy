@@ -4,21 +4,27 @@ The Kotlin library supports Android 6.0 (API 23) or later. Apps that use it must
 
 ## Installation
 
-Davy isn't published to a Maven repository yet. Until it is, include it in your build from a checkout of this repository, as a [composite build](https://docs.gradle.org/current/userguide/composite_builds.html). In your `settings.gradle.kts`:
+Davy is published to Maven Central as `com.gu:davy`. Make sure your build uses Maven Central, as new Android projects do, then depend on it from your app module's `build.gradle.kts`, replacing `x.y.z` with the [latest version](https://central.sonatype.com/artifact/com.gu/davy):
+
+```kotlin
+dependencies {
+    implementation("com.gu:davy:x.y.z")
+}
+```
+
+The Android library and the Swift package share version numbers, so the same version sends the same requests on both platforms.
+
+Davy's manifest adds the `INTERNET` permission to your app.
+
+### Using an unreleased version
+
+To try changes that aren't released yet, include Davy from a checkout of this repository as a [composite build](https://docs.gradle.org/current/userguide/composite_builds.html). In your `settings.gradle.kts`:
 
 ```kotlin
 includeBuild("path/to/davy/Android")
 ```
 
-Then depend on it from your app module's `build.gradle.kts`:
-
-```kotlin
-dependencies {
-    implementation("com.gu:davy")
-}
-```
-
-Davy's manifest adds the `INTERNET` permission to your app.
+Gradle then builds `com.gu:davy` from the checkout instead of downloading it.
 
 ## Creating the instance
 
@@ -67,7 +73,7 @@ Or use `DavyDebugActivity.intent(context, telemetry)` to start it some other way
 - **Invalid names.** With `onInvalidEventName = InvalidEventNameAction.CRASH`, `log` throws an `IllegalArgumentException`.
 - **Exceptions.** `log(exception, name)` records the exception's class name under `error_type`. In builds minified with R8, your own exception classes are renamed unless you keep their names.
 - **Cookies.** Davy uses a separate OkHttp client with cookies disabled. It does not use a process-wide `java.net.CookieHandler`.
-- **Session data.** `appVersion` and `build` are the app's `versionName` and `versionCode`. `os` is `Android`, `osVersion` is padded to three parts, such as `15.0.0`, and `deviceModel` is the model name, such as `Pixel 9`.
+- **Session data.** `app_version` and `build` are the app's `versionName` and `versionCode`. `os` is `android`, `os_version` is padded to three parts, such as `15.0.0`, and `device_model` is the model name, such as `Pixel 9`.
 - **Diagnostics.** Errors' diagnostics use the same keys as on Apple platforms with Android's values. See [Diagnostics](backend.md#diagnostics).
 
 ## Example app

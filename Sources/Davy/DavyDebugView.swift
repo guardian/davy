@@ -909,7 +909,7 @@ private struct DebugEventSessionSection: View {
                 Text(session.appVersion ?? "—")
             }
             DebugField("Build") {
-                Text(session.build ?? "—")
+                Text(session.build.map(String.init) ?? "—")
             }
             DebugField("OS") {
                 Text(verbatim: "\(session.os) \(session.osVersion)")
@@ -956,7 +956,7 @@ private struct DebugEventJSONSection: View {
         } header: {
             Text(verbatim: "Example Request JSON")
         } footer: {
-            Text(verbatim: "This example contains one event and uses its timestamp as sentAt. Open a request to see the actual batch.")
+            Text(verbatim: "This example contains one event and uses its timestamp as sent_at. Open a request to see the actual batch.")
         }
     }
 }

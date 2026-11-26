@@ -44,7 +44,7 @@ internal class RequestBuilder(configuration: DavyConfiguration) {
 
     /**
      * The size of [event] in bytes: the UTF-8 length of a single-event JSON request body with
-     * [session]. `sentAt` is always 24 characters, so any millisecond value will do.
+     * [session]. `sent_at` is always 24 characters, so any millisecond value will do.
      */
     fun size(event: EventRecord, session: Session): Int =
         DavyJson.payload(session, listOf(event), sentAtMillis = 0L).toByteArray(Charsets.UTF_8).size
