@@ -41,7 +41,7 @@ internal data class Session(
         copy(info = (info.orEmpty() + additionalInfo).takeIf { it.isNotEmpty() })
 
     companion object {
-        const val OS = "Android"
+        const val OS = "android"
 
         /** Captures the current app and device data for a new session. */
         fun start(context: Context, environment: String?, info: Map<String, Any> = emptyMap()): Session {

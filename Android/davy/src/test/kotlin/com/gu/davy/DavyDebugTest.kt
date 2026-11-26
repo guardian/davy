@@ -346,7 +346,7 @@ class DavyDebugTest {
                 "app_version" : "1.2.0",
                 "id" : "6F9619FF-8B86-D011-B42D-00C04FC964FF",
                 "locale" : "en_GB",
-                "os" : "Android",
+                "os" : "android",
                 "os_version" : "15.0.0"
               }
             }

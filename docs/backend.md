@@ -30,7 +30,7 @@ Each request contains between 1 and `batchSize` events from a single session, al
     "environment": "production",
     "app_version": "1.2.0",
     "build": 45,
-    "os": "iOS",
+    "os": "ios",
     "os_version": "26.1.0",
     "device_model": "iPhone17,1",
     "locale": "en_GB",
@@ -68,7 +68,7 @@ Set `batchSize` to `1` to send each event as its own request with a single-eleme
 | `environment` | The configured `environment`, for example `debug`, `beta`, or `production`; omitted if not set |
 | `app_version` | The app's version: `CFBundleShortVersionString` on Apple platforms, `versionName` on Android; omitted if missing |
 | `build` | The app's build number, as an integer: `CFBundleVersion` on Apple platforms, `versionCode` on Android; omitted if missing, or if `CFBundleVersion` isn't a whole number |
-| `os` | `iOS`, `macOS`, `macCatalyst`, `visionOS`, `tvOS`, `watchOS`, or `Android` |
+| `os` | `ios`, `macos`, `maccatalyst`, `visionos`, `tvos`, `watchos`, or `android` |
 | `os_version` | `major.minor.patch`, for example `26.1.0`, or `15.0.0` for Android 15 |
 | `device_model` | The hardware model identifier on Apple platforms, such as `iPhone17,1`, or `Simulator`; the model name on Android, such as `Pixel 9` |
 | `locale` | The device's language and region only, for example `en_GB`, or just the language if there's no region |

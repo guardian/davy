@@ -13,7 +13,7 @@
         "environment": "production",
         "app_version": "1.2.0",
         "build": 45,
-        "os": "iOS",
+        "os": "ios",
         "os_version": "26.1.0",
         "device_model": "iPhone17,1",
         "locale": "en_GB",
@@ -80,7 +80,7 @@
               "tier": "supporter"
             },
             "locale": "en_GB",
-            "os": "iOS",
+            "os": "ios",
             "os_version": "26.1.0"
           }
         }
@@ -93,7 +93,7 @@
       "sent_at": "2023-11-14T22:13:25.007Z",
       "session": {
         "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
-        "os": "Android",
+        "os": "android",
         "os_version": "15.0.0"
       },
       "events": [
@@ -138,7 +138,7 @@
           "sent_at": "2023-11-14T22:13:25.007Z",
           "session": {
             "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
-            "os": "Android",
+            "os": "android",
             "os_version": "15.0.0"
           }
         }
@@ -151,7 +151,7 @@
       "sent_at": "2026-11-09T11:39:00.250Z",
       "session": {
         "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
-        "os": "iOS",
+        "os": "ios",
         "os_version": "26.1.0",
         "info": {
           "tier": "supporter",
@@ -212,7 +212,7 @@
               "beta": true,
               "tier": "supporter"
             },
-            "os": "iOS",
+            "os": "ios",
             "os_version": "26.1.0"
           }
         }

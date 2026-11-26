@@ -82,7 +82,7 @@ paths:
                 environment: production
                 app_version: 1.2.0
                 build: 45
-                os: iOS
+                os: ios
                 os_version: 26.1.0
                 device_model: iPhone17,1
                 locale: en_GB
@@ -298,7 +298,7 @@ components:
     OS:
       type: string
       description: The operating system.
-      enum: [iOS, macOS, macCatalyst, visionOS, tvOS, watchOS, Android]
+      enum: [ios, macos, maccatalyst, visionos, tvos, watchos, android]
     OSVersion:
       type: string
       description: |

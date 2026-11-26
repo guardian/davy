@@ -16,7 +16,7 @@ struct Session: Codable, Sendable, Hashable {
     /// The main bundle's `CFBundleVersion` as a number, for example `45`, or `nil` if it isn't a
     /// whole number, such as `"1.2.3"`.
     let build: Int?
-    /// The operating system, for example `"iOS"` or `"macOS"`.
+    /// The operating system, for example `"ios"` or `"macos"`.
     let os: String
     /// The operating system version, for example `"26.1.0"`.
     let osVersion: String
@@ -84,17 +84,17 @@ struct Session: Codable, Sendable, Hashable {
 
     private static var os: String {
         #if targetEnvironment(macCatalyst)
-        "macCatalyst"
+        "maccatalyst"
         #elseif os(macOS)
-        "macOS"
+        "macos"
         #elseif os(visionOS)
-        "visionOS"
+        "visionos"
         #elseif os(tvOS)
-        "tvOS"
+        "tvos"
         #elseif os(watchOS)
-        "watchOS"
+        "watchos"
         #else
-        "iOS"
+        "ios"
         #endif
     }
 
