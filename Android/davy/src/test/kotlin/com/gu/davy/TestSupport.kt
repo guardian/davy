@@ -88,7 +88,7 @@ internal fun testSession(environment: String? = null, info: Map<String, Any>? = 
     id = UUID.randomUUID(),
     environment = environment,
     appVersion = "1.2.0",
-    build = "45",
+    build = 45,
     os = Session.OS,
     osVersion = "15.0.0",
     deviceModel = "Pixel 9",

@@ -67,7 +67,7 @@ Or use `DavyDebugActivity.intent(context, telemetry)` to start it some other way
 - **Invalid names.** With `onInvalidEventName = InvalidEventNameAction.CRASH`, `log` throws an `IllegalArgumentException`.
 - **Exceptions.** `log(exception, name)` records the exception's class name under `error_type`. In builds minified with R8, your own exception classes are renamed unless you keep their names.
 - **Cookies.** Davy uses a separate OkHttp client with cookies disabled. It does not use a process-wide `java.net.CookieHandler`.
-- **Session data.** `appVersion` and `build` are the app's `versionName` and `versionCode`. `os` is `Android`, `osVersion` is padded to three parts, such as `15.0.0`, and `deviceModel` is the model name, such as `Pixel 9`.
+- **Session data.** `app_version` and `build` are the app's `versionName` and `versionCode`. `os` is `android`, `os_version` is padded to three parts, such as `15.0.0`, and `device_model` is the model name, such as `Pixel 9`.
 - **Diagnostics.** Errors' diagnostics use the same keys as on Apple platforms with Android's values. See [Diagnostics](backend.md#diagnostics).
 
 ## Example app

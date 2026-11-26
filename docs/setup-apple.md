@@ -126,7 +126,7 @@ Or present `DavyDebugView(telemetry: telemetry)` yourself. It has its own `Navig
 - **Storage.** Pending events are stored in `Application Support/<bundle identifier>/Davy`, from `DavyConfiguration.defaultStorageDirectory`. They're excluded from iCloud and device backups, and Time Machine on macOS, wherever `storageDirectory` points, so they're never restored onto another device.
 - **Invalid names.** With `onInvalidEventName: .crash`, `log(_:)` stops the app with `fatalError`.
 - **Environment.** TestFlight and App Store builds share a binary, so telling them apart for `environment` needs a runtime check or a separate build configuration.
-- **Session data.** `appVersion` and `build` are the main bundle's `CFBundleShortVersionString` and `CFBundleVersion`. `os` is `iOS`, `macOS`, `macCatalyst`, `visionOS`, `tvOS`, or `watchOS`, and `deviceModel` is the hardware model identifier, such as `iPhone17,1`, or `Simulator`.
+- **Session data.** `app_version` and `build` are the main bundle's `CFBundleShortVersionString` and `CFBundleVersion`. `build` is sent as an integer, so it's omitted if `CFBundleVersion` isn't a whole number, such as `1.2.3`. `os` is `ios`, `macos`, `maccatalyst`, `visionos`, `tvos`, or `watchos`, and `device_model` is the hardware model identifier, such as `iPhone17,1`, or `Simulator`.
 - **Diagnostics.** Errors' `thermal_state` is `nominal`, `fair`, `serious`, or `critical`, and `low_power_mode` is whether Low Power Mode is on. See [Diagnostics](backend.md#diagnostics).
 
 ## Example app

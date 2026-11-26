@@ -341,13 +341,13 @@ class DavyDebugTest {
                   "type" : "error"
                 }
               ],
-              "sentAt" : "2026-11-09T11:38:57.112Z",
+              "sent_at" : "2026-11-09T11:38:57.112Z",
               "session" : {
-                "appVersion" : "1.2.0",
+                "app_version" : "1.2.0",
                 "id" : "6F9619FF-8B86-D011-B42D-00C04FC964FF",
                 "locale" : "en_GB",
-                "os" : "Android",
-                "osVersion" : "15.0.0"
+                "os" : "android",
+                "os_version" : "15.0.0"
               }
             }
             """.trimIndent(),

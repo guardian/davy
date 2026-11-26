@@ -133,7 +133,7 @@ class DebugEventQueryTest {
 
     @Test
     fun requestBodiesAreIndentedWithSortedKeysWhenTheyAreJson() {
-        val body = """{"session":{"os":"Android","id":"6F9619FF"},"events":[{"name":"a\"b","info":{}},[]],"count":2,"valid":true,"note":null}"""
+        val body = """{"session":{"os":"android","id":"6F9619FF"},"events":[{"name":"a\"b","info":{}},[]],"count":2,"valid":true,"note":null}"""
 
         assertEquals(
             """
@@ -149,7 +149,7 @@ class DebugEventQueryTest {
               "note" : null,
               "session" : {
                 "id" : "6F9619FF",
-                "os" : "Android"
+                "os" : "android"
               },
               "valid" : true
             }
