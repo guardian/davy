@@ -3,7 +3,7 @@ on:
   push:
     branches:
       - main
-      - Gradle-dependency-graph-de015c276ac20f7f
+      - Gradle-dependency-graph-db025545dc81d24f
   workflow_dispatch: 
 permissions:
   contents: read
